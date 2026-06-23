@@ -798,6 +798,189 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
 
+  /* ── Queue panel ── */
+  #queuePanel {
+    position: fixed;
+    top: 53px; right: 0;
+    width: 370px;
+    max-height: calc(100vh - 63px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: 12px 0 0 12px;
+    box-shadow: -10px 4px 36px rgba(0,0,0,.6);
+    z-index: 300;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #queuePanel.visible { display: flex; }
+
+  .qp-header {
+    display: flex;
+    align-items: center;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .qp-title {
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex: 1;
+  }
+  .qp-hbtn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-size: .73rem;
+    font-weight: 600;
+    transition: color .15s, background .15s;
+  }
+  .qp-hbtn:hover { color: var(--text); background: rgba(255,255,255,.06); }
+
+  #queueContent {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .qp-empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--muted);
+    font-size: .83rem;
+  }
+  .qp-section {
+    font-size: .63rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 6px 4px 2px;
+  }
+
+  /* Task card */
+  .tc {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 9px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    transition: border-color .15s;
+  }
+  .tc.tc-running  { border-color: var(--accent); }
+  .tc.tc-done     { opacity: .65; }
+  .tc.tc-error    { border-color: var(--danger); opacity: .8; }
+  .tc.tc-cancelled{ opacity: .45; }
+
+  .tc-row1 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+  .tc-type-badge {
+    font-size: .62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    letter-spacing: .04em;
+  }
+  .tc-type-sync  { background: rgba(124,58,237,.25); color: #c4b5fd; }
+  .tc-type-verify{ background: rgba(245,158,11,.2);  color: #fcd34d; }
+  .tc-type-auto  { background: rgba(34,197,94,.18);  color: #86efac; }
+
+  .tc-name {
+    font-size: .82rem;
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .tc-cancel-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: .9rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color .12s, background .12s;
+  }
+  .tc-cancel-btn:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+
+  .tc-msg {
+    font-size: .73rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tc-error-msg {
+    font-size: .73rem;
+    color: var(--danger);
+    line-height: 1.4;
+  }
+
+  .tc-prog-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .tc-prog-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 999px;
+    transition: width .4s ease;
+  }
+  .tc-prog-fill.indeterminate {
+    width: 35% !important;
+    animation: indeterminate 1.2s ease-in-out infinite;
+  }
+  .tc-rich {
+    display: flex;
+    gap: 10px;
+    font-size: .64rem;
+    font-family: monospace;
+    color: var(--muted);
+  }
+
+  /* Queue badge on header button */
+  .queue-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    font-size: .6rem;
+    font-weight: 800;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    margin-left: 2px;
+    line-height: 1;
+  }
+
   /* ── Verify annotated lines view ── */
   #verifyLinesView {
     flex: 1;
@@ -895,6 +1078,14 @@
     </div>
   </div>
 
+  <button id="queueBtn" class="hbtn" title="Task queue">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+      <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+    </svg>
+    <span id="queueBadge" class="queue-badge" style="display:none">0</span>
+  </button>
+
   <button id="settingsBtn" class="hbtn" title="Settings">
     <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="3"/>
@@ -902,6 +1093,18 @@
     </svg>
   </button>
 </header>
+
+<!-- ── Queue panel ── -->
+<div id="queuePanel">
+  <div class="qp-header">
+    <span class="qp-title">Task Queue</span>
+    <button class="qp-hbtn" id="clearDoneBtn">Clear done</button>
+    <button class="qp-hbtn" id="closeQueueBtn" style="font-size:1rem;padding:1px 8px">×</button>
+  </div>
+  <div id="queueContent">
+    <div class="qp-empty">No tasks yet — hit Sync, Verify, or ⚡ Auto on a song.</div>
+  </div>
+</div>
 
 <div id="settingsPanel">
   <div class="sg">
@@ -1189,6 +1392,12 @@ const modelStatus      = document.getElementById('modelStatus');
 const collapseSidebarBtn = document.getElementById('collapseSidebarBtn');
 const expandSidebarBtn   = document.getElementById('expandSidebarBtn');
 const mainEl             = document.querySelector('main');
+const queueBtn           = document.getElementById('queueBtn');
+const queueBadge         = document.getElementById('queueBadge');
+const queuePanel         = document.getElementById('queuePanel');
+const queueContent       = document.getElementById('queueContent');
+const closeQueueBtn      = document.getElementById('closeQueueBtn');
+const clearDoneBtn       = document.getElementById('clearDoneBtn');
 
 // ── Sidebar collapse ──────────────────────────────────────────────────────
 if (localStorage.getItem('jw_sidebar') === '0') mainEl.classList.add('sidebar-collapsed');
@@ -1358,7 +1567,7 @@ async function loadSongData(song) {
 }
 
 // ── Whisper sync (SSE) ────────────────────────────────────────────────────
-syncBtn.addEventListener('click', () => runSync());
+syncBtn.addEventListener('click', () => enqueueTask('sync'));
 
 async function runSync(lyricsOverride) {
   if (!currentSong) return;
@@ -1421,7 +1630,7 @@ function handleSyncEvent(ev) {
 }
 
 // ── Auto-whisper pipeline ─────────────────────────────────────────────────
-autoWhisperBtn.addEventListener('click', autoWhisper);
+autoWhisperBtn.addEventListener('click', () => enqueueTask('auto'));
 
 async function autoWhisper() {
   if (!currentSong) return;
@@ -1662,6 +1871,8 @@ verifyBtn.addEventListener('click', async () => {
   if (!currentSong) return;
   const lyrics = plainLyricsText.value.trim();
   if (!lyrics) { setSyncStatus('Add lyrics first.', 'error'); setTab('plain'); return; }
+  enqueueTask('verify');
+  return;  // queue handles the rest — keep old SSE path below for reference only
   verifyBtn.disabled = true;
   verifyBtn.innerHTML = '<span class="spinner"></span>';
   verifyPanel.classList.remove('visible');
@@ -1940,6 +2151,198 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ── Task Queue ────────────────────────────────────────────────────────────
+const _appliedTaskIds = new Set();
+let _queueState = { active: null, pending: [], history: [] };
+
+// Panel open/close
+queueBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = queuePanel.classList.toggle('visible');
+  queueBtn.classList.toggle('active', open);
+});
+closeQueueBtn.addEventListener('click', () => {
+  queuePanel.classList.remove('visible');
+  queueBtn.classList.remove('active');
+});
+document.addEventListener('click', (e) => {
+  if (queuePanel.classList.contains('visible') &&
+      !queuePanel.contains(e.target) && e.target !== queueBtn) {
+    queuePanel.classList.remove('visible');
+    queueBtn.classList.remove('active');
+  }
+});
+clearDoneBtn.addEventListener('click', () => {
+  // Visually clear history; server prunes automatically, but update local render
+  _queueState.history = [];
+  renderQueue(_queueState);
+});
+
+// EventSource
+const _qEvt = new EventSource('/api/queue/stream');
+_qEvt.onmessage = (e) => {
+  try {
+    const state = JSON.parse(e.data);
+    _queueState = state;
+    renderQueue(state);
+    applyCompletedTasks(state);
+  } catch {}
+};
+_qEvt.onerror = () => {};   // reconnects automatically
+
+// Enqueue a task for the current song
+async function enqueueTask(type) {
+  if (!currentSong) return;
+  const songName = currentSong.track_titles?.[0] ?? currentSong.name ?? '';
+  const lyrics   = plainLyricsText.value.trim();
+  try {
+    await api('/api/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, song_id: currentSong.id, song_name: songName, lyrics }),
+    });
+    // Auto-open queue panel
+    queuePanel.classList.add('visible');
+    queueBtn.classList.add('active');
+    setSyncStatus(`Added "${songName}" to queue (${type})`, 'ok');
+  } catch (e) {
+    setSyncStatus('Queue error: ' + (e.message ?? e), 'error');
+  }
+}
+
+// Cancel a task
+async function cancelTask(taskId) {
+  try {
+    await fetch(`/api/queue/${taskId}/cancel`, { method: 'POST' });
+  } catch {}
+}
+
+// Render helpers
+function tcTypeBadge(type) {
+  const labels = { sync: '⚡ Sync', verify: '✓ Verify', auto: '🚀 Auto' };
+  const cls    = { sync: 'tc-type-sync', verify: 'tc-type-verify', auto: 'tc-type-auto' };
+  return `<span class="tc-type-badge ${cls[type] ?? ''}">${labels[type] ?? type}</span>`;
+}
+
+function renderTask(task, isActive) {
+  const canCancel = task.status === 'pending' || task.status === 'running';
+  const pct       = task.progress?.pct ?? 0;
+  const msg       = task.progress?.msg ?? (task.status === 'pending' ? 'Waiting in queue…' : '');
+  const prog      = task.progress?.progress ?? null;
+  const indeterminate = task.progress?.stage === 'loading';
+
+  let bodyHtml = '';
+  if (isActive) {
+    const richHtml = prog
+      ? `<div class="tc-rich">
+           <span>${prog.done.toFixed(1)}/${prog.total.toFixed(1)}s</span>
+           <span>ETA ${prog.eta}</span>
+           <span>${prog.speed.toFixed(2)} s/sec</span>
+         </div>`
+      : '';
+    bodyHtml = `
+      <div class="tc-msg">${esc(msg)}</div>
+      ${richHtml}
+      <div class="tc-prog-track">
+        <div class="tc-prog-fill${indeterminate ? ' indeterminate' : ''}" style="width:${indeterminate ? 35 : pct}%"></div>
+      </div>`;
+  } else if (task.status === 'error') {
+    bodyHtml = `<div class="tc-error-msg">✗ ${esc(task.error || 'Failed')}</div>`;
+  } else if (task.status === 'done') {
+    const doneMsg = task.progress?.msg ?? 'Done';
+    bodyHtml = `<div class="tc-msg" style="color:var(--green)">✓ ${esc(doneMsg)}</div>`;
+  } else if (task.status === 'cancelled') {
+    bodyHtml = `<div class="tc-msg">Cancelled</div>`;
+  } else {
+    bodyHtml = `<div class="tc-msg">${esc(msg)}</div>`;
+  }
+
+  return `<div class="tc tc-${task.status}" data-task-id="${task.id}">
+    <div class="tc-row1">
+      ${tcTypeBadge(task.type)}
+      <span class="tc-name" title="${esc(task.song_name)}">${esc(task.song_name)}</span>
+      ${canCancel ? `<button class="tc-cancel-btn" data-task-id="${task.id}" title="Cancel">×</button>` : ''}
+    </div>
+    ${bodyHtml}
+  </div>`;
+}
+
+function renderQueue(state) {
+  const { active, pending, history } = state;
+  const totalBusy = (active ? 1 : 0) + (pending?.length ?? 0);
+
+  // Badge
+  queueBadge.textContent = totalBusy;
+  queueBadge.style.display = totalBusy > 0 ? '' : 'none';
+
+  if (!active && !pending?.length && !history?.length) {
+    queueContent.innerHTML = '<div class="qp-empty">No tasks yet — hit Sync, Verify, or ⚡ Auto on a song.</div>';
+    return;
+  }
+
+  let html = '';
+  if (active) {
+    html += `<div class="qp-section">Running</div>${renderTask(active, true)}`;
+  }
+  if (pending?.length) {
+    html += `<div class="qp-section">Pending (${pending.length})</div>`;
+    html += pending.map(t => renderTask(t, false)).join('');
+  }
+  if (history?.length) {
+    const recent = [...history].reverse().slice(0, 15);
+    html += `<div class="qp-section">Recent</div>`;
+    html += recent.map(t => renderTask(t, false)).join('');
+  }
+  queueContent.innerHTML = html;
+
+  // Wire cancel buttons
+  queueContent.querySelectorAll('.tc-cancel-btn').forEach(btn =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelTask(btn.dataset.taskId);
+    })
+  );
+}
+
+// Apply completed tasks to current song view
+function applyCompletedTasks(state) {
+  const candidates = [...(state.history ?? [])];
+  if (state.active?.status === 'done') candidates.push(state.active);
+
+  for (const task of candidates) {
+    if (_appliedTaskIds.has(task.id)) continue;
+    if (task.song_id !== currentSong?.id) continue;
+
+    // Sync / auto (with lines)
+    if (task.status === 'done' && task.result?.lines?.length) {
+      _appliedTaskIds.add(task.id);
+      syncedLines = task.result.lines;
+      renderKaraoke(syncedLines);
+      setTab('karaoke');
+      setSyncStatus(`Queue ✓ — ${syncedLines.length} lines synced`, 'ok');
+      maybeShowPropose();
+    }
+
+    // Verify (verify results only, no lines)
+    if (task.status === 'done' && task.result?.verify && !task.result?.lines) {
+      _appliedTaskIds.add(task.id);
+      lastVerifyResults = task.result.verify;
+      showVerifyResults(task.result.counts ?? {});
+      setTab('plain');
+      setSyncStatus('Queue verify done — click lines to toggle, then apply or sync.', 'ok');
+    }
+
+    // Auto that hit too-many-absent: show verify panel for review
+    if (task.status === 'error' && task.result?.verify) {
+      _appliedTaskIds.add(task.id);
+      lastVerifyResults = task.result.verify;
+      showVerifyResults(task.result.counts ?? {});
+      setTab('plain');
+      setSyncStatus('Auto: ' + (task.error ?? 'too many absent lines'), 'error');
+    }
+  }
+}
 
 // ── Settings ──────────────────────────────────────────────────────────────
 tokenInput.value = localStorage.getItem('jw_token') || '';

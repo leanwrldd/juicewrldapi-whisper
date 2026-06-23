@@ -797,6 +797,58 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+
+  /* ── Verify annotated lines view ── */
+  #verifyLinesView {
+    flex: 1;
+    overflow-y: auto;
+    margin: 6px 14px 14px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .vl {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: .88rem;
+    line-height: 1.5;
+    cursor: pointer;
+    user-select: none;
+    transition: filter .12s, opacity .15s;
+  }
+  .vl:hover { filter: brightness(1.15); }
+  .vl.vl-present  { background: rgba(34,197,94,.09); }
+  .vl.vl-uncertain{ background: rgba(245,158,11,.16); }
+  .vl.vl-absent   { background: rgba(239,68,68,.2);  }
+  .vl.vl-removed  { opacity: .3; text-decoration: line-through; }
+  .vl-text { flex: 1; }
+  .vl-badge {
+    font-size: .65rem;
+    font-family: monospace;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(0,0,0,.3);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .vl-present  .vl-badge { color: #4ade80; }
+  .vl-uncertain .vl-badge { color: #fbbf24; }
+  .vl-absent   .vl-badge { color: #f87171; }
+
+  /* ── Rich progress row ── */
+  .prog-rich {
+    display: none;
+    gap: 14px;
+    font-size: .68rem;
+    font-family: monospace;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .prog-rich.visible { display: flex; }
+  .prog-rich span { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -990,11 +1042,14 @@
               <div class="verify-actions">
                 <button class="vbtn danger" id="removeAbsentBtn">Remove absent</button>
                 <button class="vbtn" id="removeUncertainBtn">Remove absent + uncertain</button>
-                <button class="vbtn" id="showAbsentBtn">Show absent</button>
+                <button class="vbtn" id="applyManualBtn">Keep selected</button>
                 <button class="vbtn" id="dismissVerifyBtn">Dismiss</button>
               </div>
               <div class="verify-absent-lines" id="verifyAbsentLines"></div>
             </div>
+
+            <!-- Colored verify lines — shown after Verify, hides textarea -->
+            <div id="verifyLinesView"></div>
 
             <textarea id="plainLyricsText" spellcheck="false" placeholder="No lyrics — paste here or search Genius above…"></textarea>
           </div>
@@ -1042,6 +1097,11 @@
           <div class="prog-label">
             <span id="progMsg">—</span>
             <span id="progPct"></span>
+          </div>
+          <div class="prog-rich" id="progRich">
+            <span id="progDone"></span>
+            <span id="progEta"></span>
+            <span id="progSpeed"></span>
           </div>
           <div class="prog-track">
             <div class="prog-fill" id="progFill"></div>
@@ -1105,9 +1165,14 @@ const vCountUncertain  = document.getElementById('vCountUncertain');
 const vCountAbsent     = document.getElementById('vCountAbsent');
 const removeAbsentBtn  = document.getElementById('removeAbsentBtn');
 const removeUncertainBtn = document.getElementById('removeUncertainBtn');
-const showAbsentBtn    = document.getElementById('showAbsentBtn');
+const applyManualBtn   = document.getElementById('applyManualBtn');
 const dismissVerifyBtn = document.getElementById('dismissVerifyBtn');
 const verifyAbsentLines= document.getElementById('verifyAbsentLines');
+const verifyLinesView  = document.getElementById('verifyLinesView');
+const progRich         = document.getElementById('progRich');
+const progDone         = document.getElementById('progDone');
+const progEta          = document.getElementById('progEta');
+const progSpeed        = document.getElementById('progSpeed');
 const geniusBtn        = document.getElementById('geniusBtn');
 const geniusUrlBtn     = document.getElementById('geniusUrlBtn');
 const geniusUrlInput   = document.getElementById('geniusUrlInput');
@@ -1335,7 +1400,7 @@ function handleSyncEvent(ev) {
   if (ev.stage === 'fetching') showProgress(ev.msg, 2);
   else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.45);
   else if (ev.stage === 'loading') showProgress(ev.msg, 52, true);
-  else if (ev.stage === 'aligning') showProgress(ev.msg, 55 + ((ev.pct ?? 0) / 95) * 44);
+  else if (ev.stage === 'aligning') showProgress(ev.msg, ev.pct ?? 55, false, ev.progress ?? null);
   else if (ev.stage === 'done') {
     hideProgress();
     syncedLines = ev.lines ?? [];
@@ -1412,7 +1477,7 @@ async function autoWhisper() {
               if (ev.stage === 'fetching') showProgress(ev.msg, 2);
               else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.3);
               else if (ev.stage === 'loading') showProgress(ev.msg, 38, true);
-              else if (ev.stage === 'transcribing') showProgress('Verifying…', 42 + ((ev.pct ?? 0) / 95) * 48);
+              else if (ev.stage === 'transcribing') showProgress(ev.msg, ev.pct ?? 42, false, ev.progress ?? null);
               else if (ev.stage === 'done') {
                 lastVerifyResults = ev.results ?? [];
                 showVerifyResults(ev.counts ?? {});
@@ -1455,7 +1520,7 @@ async function autoWhisper() {
 }
 
 // ── Progress ──────────────────────────────────────────────────────────────
-function showProgress(msg, pct, indeterminate = false) {
+function showProgress(msg, pct, indeterminate = false, prog = null) {
   syncProgress.classList.add('visible');
   progMsg.textContent = msg;
   if (indeterminate) {
@@ -1467,11 +1532,20 @@ function showProgress(msg, pct, indeterminate = false) {
     progFill.classList.remove('indeterminate');
     progFill.style.width = pct + '%';
   }
+  if (prog) {
+    progRich.classList.add('visible');
+    progDone.textContent  = `${prog.done.toFixed(1)} / ${prog.total.toFixed(1)}s`;
+    progEta.textContent   = `ETA ${prog.eta}`;
+    progSpeed.textContent = `${prog.speed.toFixed(2)} s/sec`;
+  } else {
+    progRich.classList.remove('visible');
+  }
 }
 function hideProgress() {
   syncProgress.classList.remove('visible');
   progFill.classList.remove('indeterminate');
   progFill.style.width = '0%';
+  progRich.classList.remove('visible');
 }
 
 // ── Karaoke ───────────────────────────────────────────────────────────────
@@ -1614,11 +1688,11 @@ verifyBtn.addEventListener('click', async () => {
           if (ev.stage === 'fetching') showProgress(ev.msg, 2);
           else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.35);
           else if (ev.stage === 'loading') showProgress(ev.msg, 42, true);
-          else if (ev.stage === 'transcribing') showProgress(ev.msg, 45 + ((ev.pct ?? 0) / 95) * 50);
+          else if (ev.stage === 'transcribing') showProgress(ev.msg, ev.pct ?? 42, false, ev.progress ?? null);
           else if (ev.stage === 'done') {
             hideProgress(); lastVerifyResults = ev.results ?? [];
             showVerifyResults(ev.counts ?? {}); setTab('plain');
-            setSyncStatus('Verification done — review and clean up then sync.', 'ok');
+            setSyncStatus('Verification done — click lines to toggle, then apply or sync.', 'ok');
           } else if (ev.stage === 'error') {
             hideProgress(); setSyncStatus('Verify error: ' + ev.msg, 'error');
           }
@@ -1640,27 +1714,67 @@ function showVerifyResults(counts) {
   verifyAbsentLines.classList.remove('visible');
   verifyAbsentLines.innerHTML = '';
   verifyPanel.classList.add('visible');
+
+  // Render colored annotated lines (replaces textarea while verify is active)
+  verifyLinesView.innerHTML = lastVerifyResults.map((r, i) => {
+    const icon  = r.status === 'present' ? '✓' : r.status === 'uncertain' ? '?' : '✗';
+    const score = Math.round(r.score * 100);
+    return `<div class="vl vl-${r.status}" data-vi="${i}" title="Click to toggle removal">
+      <span class="vl-text">${esc(r.line)}</span>
+      <span class="vl-badge">${icon} ${score}%</span>
+    </div>`;
+  }).join('');
+
+  verifyLinesView.querySelectorAll('.vl').forEach(el =>
+    el.addEventListener('click', () => {
+      el.classList.toggle('vl-removed');
+      const i = Number(el.dataset.vi);
+      if (lastVerifyResults[i]) lastVerifyResults[i]._removed = el.classList.contains('vl-removed');
+    })
+  );
+
+  // Show annotated view, hide textarea
+  verifyLinesView.style.display = 'flex';
+  verifyLinesView.style.flexDirection = 'column';
+  plainLyricsText.style.display = 'none';
 }
+
+function _closeVerifyView() {
+  verifyLinesView.style.display = 'none';
+  plainLyricsText.style.display = '';
+  verifyPanel.classList.remove('visible');
+  verifyAbsentLines.classList.remove('visible');
+  verifyAbsentLines.innerHTML = '';
+}
+
 function applyVerifyFilter(removeStatuses) {
-  const keep = lastVerifyResults.filter(r => !removeStatuses.includes(r.status)).map(r => r.line);
+  const keep = lastVerifyResults.filter(r =>
+    !r._removed && !removeStatuses.includes(r.status)
+  ).map(r => r.line);
   plainLyricsText.value = keep.join('\n');
   customLyrics = plainLyricsText.value;
   updateLyricsSrc('edited', !!plainLyricsText.value);
-  verifyPanel.classList.remove('visible');
+  _closeVerifyView();
   setSyncStatus(`Removed ${lastVerifyResults.length - keep.length} lines — ready to sync.`, 'ok');
+  lastVerifyResults = [];
 }
-removeAbsentBtn.addEventListener('click', () => applyVerifyFilter(['absent']));
+
+removeAbsentBtn.addEventListener('click',    () => applyVerifyFilter(['absent']));
 removeUncertainBtn.addEventListener('click', () => applyVerifyFilter(['absent', 'uncertain']));
-showAbsentBtn.addEventListener('click', () => {
-  const absent = lastVerifyResults.filter(r => r.status === 'absent');
-  verifyAbsentLines.innerHTML = absent.length
-    ? absent.map(r => `<p>✗ ${esc(r.line)}</p>`).join('')
-    : '<p>No absent lines.</p>';
-  verifyAbsentLines.classList.toggle('visible');
-  showAbsentBtn.textContent = verifyAbsentLines.classList.contains('visible') ? 'Hide absent' : 'Show absent';
+
+applyManualBtn.addEventListener('click', () => {
+  const keep = lastVerifyResults.filter(r => !r._removed).map(r => r.line);
+  plainLyricsText.value = keep.join('\n');
+  customLyrics = plainLyricsText.value;
+  updateLyricsSrc('edited', !!plainLyricsText.value);
+  _closeVerifyView();
+  setSyncStatus(`Applied — ${keep.length} lines kept.`, 'ok');
+  lastVerifyResults = [];
 });
+
 dismissVerifyBtn.addEventListener('click', () => {
-  verifyPanel.classList.remove('visible'); lastVerifyResults = [];
+  _closeVerifyView();
+  lastVerifyResults = [];
 });
 
 // ── Lyrics editing ────────────────────────────────────────────────────────

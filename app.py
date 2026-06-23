@@ -1,9 +1,12 @@
 import asyncio
+import io
 import json
 import os
 import pathlib
 import re
+import sys
 import tempfile
+import threading
 from contextlib import asynccontextmanager
 
 import httpx
@@ -15,6 +18,74 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 BASE = "https://juicewrldapi.com/juicewrld"
+
+# ---------------------------------------------------------------------------
+# tqdm progress spy — captures stable_whisper alignment/transcription progress
+# ---------------------------------------------------------------------------
+_TQDM_RE = re.compile(
+    r'([A-Za-z][\w ]*):\s*(\d+)%'          # label + percent
+    r'.*?([\d.]+)/([\d.]+)'                  # done / total (seconds)
+    r'.*?\[(\d+:\d+)<(\d+:\d+),\s*([\d.]+)s/sec\]'  # [elapsed<eta, speed]
+)
+
+
+class _ProgressSpy:
+    """Thread-safe stderr capturer that parses tqdm progress lines."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._latest: dict | None = None
+
+    def write(self, s: str) -> int:
+        for chunk in re.split(r'[\r\n]', s):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            m = _TQDM_RE.search(chunk)
+            if m:
+                with self._lock:
+                    self._latest = {
+                        'label': m.group(1).strip(),
+                        'pct':   int(m.group(2)),
+                        'done':  float(m.group(3)),
+                        'total': float(m.group(4)),
+                        'elapsed': m.group(5),
+                        'eta':   m.group(6),
+                        'speed': float(m.group(7)),
+                    }
+        return len(s)
+
+    def flush(self): pass
+    def isatty(self) -> bool: return False
+    def fileno(self): raise io.UnsupportedOperation("fileno")
+
+    def latest(self) -> dict | None:
+        with self._lock:
+            return self._latest
+
+
+class _TeeStderr:
+    """Tees stderr to a _ProgressSpy and the original stderr."""
+    def __init__(self, spy: _ProgressSpy, orig):
+        self._spy = spy
+        self._orig = orig
+
+    def write(self, s: str) -> int:
+        self._spy.write(s)
+        try:
+            self._orig.write(s)
+        except Exception:
+            pass
+        return len(s)
+
+    def flush(self):
+        try:
+            self._orig.flush()
+        except Exception:
+            pass
+
+    def isatty(self) -> bool: return False
+    def fileno(self): raise io.UnsupportedOperation("fileno")
+
 
 # ---------------------------------------------------------------------------
 # Audio cache — last downloaded file, reused by /api/sync and /api/verify
@@ -422,14 +493,30 @@ async def verify_lyrics_audio(req: VerifyRequest):
 
             yield sse({"stage": "transcribing", "pct": 0, "msg": "Transcribing audio (free pass)…"})
             loop = asyncio.get_event_loop()
-            fut = loop.run_in_executor(
-                None, lambda: model.transcribe(tmp_path, verbose=False)
-            )
+            spy = _ProgressSpy()
+
+            def _run_verify():
+                orig = sys.stderr
+                sys.stderr = _TeeStderr(spy, orig)
+                try:
+                    return model.transcribe(tmp_path, verbose=False)
+                finally:
+                    sys.stderr = orig
+
+            fut = loop.run_in_executor(None, _run_verify)
             elapsed = 0
             while not fut.done():
-                pct = min(95, int((elapsed / 180) ** 0.5 * 95))
-                yield sse({"stage": "transcribing", "pct": pct,
-                           "msg": f"Transcribing… {elapsed}s"})
+                prog = spy.latest()
+                if prog:
+                    pct = 42 + prog['pct'] * 0.53
+                    msg = (f"{prog['label']}: {prog['pct']}%  "
+                           f"{prog['done']:.1f}/{prog['total']:.1f}s  "
+                           f"[{prog['elapsed']}<{prog['eta']}, {prog['speed']:.2f}s/sec]")
+                else:
+                    pct = min(41, int((elapsed / 180) ** 0.5 * 41))
+                    msg = f"Transcribing… {elapsed}s"
+                yield sse({"stage": "transcribing", "pct": pct, "msg": msg,
+                           **({"progress": prog} if prog else {})})
                 await asyncio.sleep(1)
                 elapsed += 1
             result = await fut
@@ -493,22 +580,34 @@ async def sync_lyrics(req: SyncRequest):
             lyrics = (req.lyrics or song.get("lyrics") or "").strip()
             label = "Aligning lyrics to audio" if lyrics else "Transcribing audio"
             loop = asyncio.get_event_loop()
+            spy = _ProgressSpy()
 
-            if lyrics:
-                fut = loop.run_in_executor(
-                    None, lambda: model.align(tmp_path, lyrics, language="en")
-                )
-            else:
-                fut = loop.run_in_executor(
-                    None, lambda: model.transcribe(tmp_path, word_timestamps=True, verbose=False)
-                )
+            def _run_sync():
+                orig = sys.stderr
+                sys.stderr = _TeeStderr(spy, orig)
+                try:
+                    if lyrics:
+                        return model.align(tmp_path, lyrics, language="en")
+                    else:
+                        return model.transcribe(tmp_path, word_timestamps=True, verbose=False)
+                finally:
+                    sys.stderr = orig
+
+            fut = loop.run_in_executor(None, _run_sync)
 
             elapsed = 0
             while not fut.done():
-                # Ramp from 0→95% over ~3 min using a sqrt curve so it feels alive
-                pct = min(95, int((elapsed / 180) ** 0.5 * 95))
-                yield sse({"stage": "aligning", "pct": pct,
-                           "msg": f"{label}… {elapsed}s"})
+                prog = spy.latest()
+                if prog:
+                    pct = 55 + prog['pct'] * 0.44
+                    msg = (f"{prog['label']}: {prog['pct']}%  "
+                           f"{prog['done']:.1f}/{prog['total']:.1f}s  "
+                           f"[{prog['elapsed']}<{prog['eta']}, {prog['speed']:.2f}s/sec]")
+                else:
+                    pct = min(54, int((elapsed / 180) ** 0.5 * 54))
+                    msg = f"{label}… {elapsed}s"
+                yield sse({"stage": "aligning", "pct": pct, "msg": msg,
+                           **({"progress": prog} if prog else {})})
                 await asyncio.sleep(1)
                 elapsed += 1
 

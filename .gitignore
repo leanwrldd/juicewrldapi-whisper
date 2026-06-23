@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Whisper model cache
+.cache/
+
+# Temp audio files
+*.mp3
+*.wav
+*.m4a
+
+# Model preference (local config)
+.model_pref
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db

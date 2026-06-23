@@ -1,0 +1,1948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WRLD Sync</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131c;
+    --surface2: #1c1c2a;
+    --border: #2a2a3d;
+    --accent: #7c3aed;
+    --accent2: #a855f7;
+    --text: #f0f0ff;
+    --muted: #7878a0;
+    --danger: #ef4444;
+    --green: #22c55e;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    white-space: nowrap;
+  }
+  .search-wrap {
+    flex: 1;
+    position: relative;
+    max-width: 500px;
+  }
+  .search-wrap svg {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  #searchInput {
+    width: 100%;
+    padding: 9px 14px 9px 38px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: .9rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  #searchInput:focus { border-color: var(--accent2); }
+  #searchInput::placeholder { color: var(--muted); }
+
+  /* Icon buttons in header */
+  .hbtn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color .15s, background .15s;
+    flex-shrink: 0;
+  }
+  .hbtn:hover { color: var(--text); background: var(--surface2); }
+  .hbtn.active { color: var(--accent2); }
+  .hbtn:disabled { opacity: .4; cursor: not-allowed; }
+  #randomBtn.spinning svg { animation: spin .7s linear infinite; }
+
+  /* Random filter popover */
+  .random-wrap { position: relative; display: flex; gap: 2px; }
+  #randomFilterPopover {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    width: 220px;
+    z-index: 200;
+    box-shadow: 0 8px 28px rgba(0,0,0,.65);
+  }
+  #randomFilterPopover.visible { display: block; }
+  .rf-title {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .rf-group { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+  .rf-group:last-child { margin-bottom: 0; }
+  .rf-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .8rem;
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: background .1s;
+  }
+  .rf-option:hover { background: var(--surface2); }
+  .rf-option input { accent-color: var(--accent2); cursor: pointer; }
+
+  /* Settings panel */
+  #settingsPanel {
+    display: none;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  #settingsPanel.visible { display: flex; }
+  .sg { display: flex; align-items: center; gap: 8px; }
+  #settingsPanel label { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+  .token-wrap { display: flex; align-items: center; gap: 4px; }
+  #tokenInput {
+    width: 270px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: .83rem;
+    font-family: monospace;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #tokenInput:focus { border-color: var(--accent2); }
+  #showTokenBtn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 6px 7px;
+    display: flex;
+    align-items: center;
+    transition: color .15s, border-color .15s;
+  }
+  #showTokenBtn:hover { color: var(--text); border-color: var(--accent2); }
+  #saveTokenBtn {
+    padding: 7px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: none;
+    color: var(--accent2);
+    font-size: .78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  #saveTokenBtn:hover { background: rgba(124,58,237,.15); }
+  .token-status { font-size: .73rem; color: var(--green); }
+  #modelSelect {
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: .83rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  #modelSelect:focus { border-color: var(--accent2); }
+  .model-status { font-size: .73rem; color: var(--muted); white-space: nowrap; }
+
+  /* ── Layout ── */
+  main {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    flex: 1;
+    min-height: 0;
+    transition: grid-template-columns .25s ease;
+  }
+  main.sidebar-collapsed { grid-template-columns: 0 1fr; }
+  @media (max-width: 680px) { main { grid-template-columns: 1fr !important; } }
+
+  /* ── Results panel ── */
+  #resultsPanel {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: opacity .2s;
+  }
+  main.sidebar-collapsed #resultsPanel { opacity: 0; pointer-events: none; }
+
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    flex-shrink: 0;
+  }
+  .results-header-text {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .icon-btn-sm {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    transition: color .15s, background .15s;
+  }
+  .icon-btn-sm:hover { color: var(--text); background: var(--surface2); }
+
+  /* Expand button — shows when sidebar is collapsed */
+  #expandSidebarBtn {
+    display: none;
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 9px;
+    align-items: center;
+    gap: 5px;
+    font-size: .72rem;
+    font-weight: 600;
+    transition: color .15s, border-color .15s;
+    z-index: 20;
+    white-space: nowrap;
+  }
+  main.sidebar-collapsed #expandSidebarBtn { display: flex; }
+  #expandSidebarBtn:hover { color: var(--text); border-color: var(--accent2); }
+
+  /* Song cards */
+  .song-card {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .song-card:hover { background: var(--surface2); }
+  .song-card.active { background: var(--surface2); border-left: 3px solid var(--accent2); }
+  .song-thumb {
+    width: 44px; height: 44px;
+    border-radius: 7px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+  .song-thumb-placeholder {
+    width: 44px; height: 44px;
+    border-radius: 7px;
+    background: var(--surface2);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 1.1rem;
+  }
+  .song-meta { min-width: 0; flex: 1; }
+  .song-name {
+    font-size: .88rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .song-sub {
+    font-size: .73rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .song-badge {
+    font-size: .62rem;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    flex-shrink: 0;
+  }
+  .badge-released { background: #14532d; color: #86efac; }
+  .badge-unreleased { background: #7c2d12; color: #fdba74; }
+  .badge-unsurfaced { background: #1e1b4b; color: #a5b4fc; }
+  .badge-recording_session { background: #1c1917; color: #a8a29e; }
+
+  /* ── Player panel ── */
+  #playerPanel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  #emptyState {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    padding: 40px;
+    text-align: center;
+  }
+  #emptyState svg { opacity: .2; }
+  #emptyState p { font-size: .95rem; }
+
+  /* ── Now playing ── */
+  #nowPlaying { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  #nowPlaying.visible { display: flex; }
+
+  .np-top {
+    display: flex;
+    gap: 18px;
+    padding: 20px 22px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .np-art {
+    width: 88px; height: 88px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--surface2);
+    flex-shrink: 0;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  }
+  .np-info { flex: 1; min-width: 0; }
+  .np-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: -.3px;
+    line-height: 1.2;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .np-artist { font-size: .83rem; color: var(--muted); margin-bottom: 7px; }
+  .np-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+  .np-tag {
+    font-size: .68rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Lyrics section (scrollable) ── */
+  #lyricsSection {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* critical: allows flex child to shrink so controls stay visible */
+  }
+
+  /* Auto-follow resume bar — lives OUTSIDE lyricsSection so it doesn't scroll away */
+  #resumeFollowBtn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--accent);
+    background: rgba(124,58,237,.12);
+    color: var(--accent2);
+    font-size: .72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid rgba(124,58,237,.3);
+  }
+  #resumeFollowBtn.visible { display: flex; }
+  #resumeFollowBtn:hover { background: rgba(124,58,237,.22); }
+
+  .lyrics-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    padding: 9px 18px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: .83rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+  .shortcuts-hint {
+    margin-left: auto;
+    padding: 0 12px;
+    font-size: .65rem;
+    color: var(--muted);
+    align-self: center;
+    white-space: nowrap;
+  }
+  .lyrics-body { padding: 20px; flex: 1; }
+
+  /* Karaoke */
+  #karaokeView { display: none; }
+  #karaokeView.visible { display: block; }
+  .karaoke-lines { display: flex; flex-direction: column; gap: 5px; }
+  .kl {
+    font-size: 1.05rem;
+    line-height: 1.6;
+    padding: 5px 10px;
+    border-radius: 8px;
+    transition: color .15s, background .15s, transform .15s;
+    cursor: pointer;
+    color: var(--muted);
+    position: relative;
+    user-select: none;
+  }
+  .kl:hover { background: rgba(255,255,255,.04); color: #d4b8ff; }
+  .kl.past { color: #c4b5fd; }
+  .kl.current {
+    color: #fff;
+    background: rgba(124,58,237,.18);
+    font-weight: 700;
+    font-size: 1.15rem;
+    transform: translateX(5px);
+  }
+  .kl.future { color: var(--muted); }
+  .kl.editing { cursor: text; background: rgba(124,58,237,.12); transform: none; }
+  .kl-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--accent2);
+    color: #fff;
+    font-size: inherit;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    outline: none;
+    padding: 0;
+  }
+  .kl-time {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: .65rem;
+    font-family: monospace;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity .15s;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .kl:hover .kl-time { opacity: 1; }
+  .kl-time:hover { border-color: var(--accent2); color: var(--accent2); }
+  .kl-time-input {
+    width: 64px;
+    background: var(--surface2);
+    border: 1px solid var(--accent2);
+    border-radius: 4px;
+    color: #fff;
+    font-size: .65rem;
+    font-family: monospace;
+    padding: 1px 4px;
+    outline: none;
+    text-align: right;
+  }
+
+  /* Plain lyrics */
+  #plainLyricsView { display: none; flex-direction: column; height: 100%; }
+  #plainLyricsView.visible { display: flex; }
+  .lyrics-edit-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 20px 0;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .lyrics-src-tag {
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .lyrics-src-tag.edited { border-color: var(--accent); color: var(--accent2); }
+  .lyr-btn {
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    font-size: .73rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .lyr-btn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.1); }
+  .lyr-btn:disabled { opacity: .4; cursor: not-allowed; }
+  #geniusUrlInput {
+    display: none;
+    flex: 1;
+    max-width: 300px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--accent2);
+    background: var(--bg);
+    color: var(--text);
+    font-size: .73rem;
+    outline: none;
+  }
+  #geniusUrlInput.visible { display: block; }
+  #geniusUrlInput::placeholder { color: var(--muted); }
+
+  #verifyPanel {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 14px 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    font-size: .8rem;
+  }
+  #verifyPanel.visible { display: flex; }
+  .verify-summary { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .v-count { font-weight: 700; }
+  .v-present { color: var(--green); }
+  .v-uncertain { color: #f59e0b; }
+  .v-absent { color: var(--danger); }
+  .verify-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+  .vbtn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text);
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .vbtn:hover { border-color: var(--accent2); background: rgba(124,58,237,.1); }
+  .vbtn.danger { border-color: var(--danger); color: var(--danger); }
+  .vbtn.danger:hover { background: rgba(239,68,68,.1); }
+  .verify-absent-lines {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding-top: 7px;
+    max-height: 90px;
+    overflow-y: auto;
+  }
+  .verify-absent-lines.visible { display: block; }
+  .verify-absent-lines p { color: var(--danger); font-size: .73rem; line-height: 1.6; opacity: .85; }
+  #plainLyricsText {
+    flex: 1;
+    margin: 8px 14px 14px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    color: #c4b5fd;
+    font-size: .9rem;
+    font-family: inherit;
+    line-height: 1.75;
+    resize: none;
+    outline: none;
+    transition: border-color .15s;
+    min-height: 180px;
+  }
+  #plainLyricsText:focus { border-color: var(--accent2); }
+  #plainLyricsText::placeholder { color: var(--muted); font-style: italic; }
+
+  /* ── Controls bar — pinned at bottom (hovering feel) ── */
+  .controls {
+    flex-shrink: 0;
+    padding: 13px 20px;
+    background: rgba(13,13,20,.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 28px rgba(0,0,0,.55);
+    z-index: 10;
+  }
+  audio { width: 100%; accent-color: var(--accent2); }
+
+  .sync-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  #syncProgress {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 8px;
+  }
+  #syncProgress.visible { display: flex; }
+  .prog-label {
+    font-size: .75rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+  .prog-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .prog-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 999px;
+    transition: width .3s ease;
+    width: 0%;
+  }
+  .prog-fill.indeterminate {
+    width: 40% !important;
+    animation: indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0%   { transform: translateX(-150%); }
+    100% { transform: translateX(350%); }
+  }
+
+  /* Sync btn */
+  #syncBtn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 16px;
+    border-radius: 8px; border: none;
+    background: var(--accent); color: #fff;
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: background .2s, transform .1s;
+  }
+  #syncBtn:hover { background: var(--accent2); }
+  #syncBtn:active { transform: scale(.97); }
+  #syncBtn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+
+  /* Auto-whisper btn */
+  #autoWhisperBtn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #6d28d9, #4338ca);
+    color: #fff;
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: opacity .2s, transform .1s;
+  }
+  #autoWhisperBtn:hover { opacity: .85; }
+  #autoWhisperBtn:active { transform: scale(.97); }
+  #autoWhisperBtn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+  /* Paste LRC btn */
+  #pasteLrcBtn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: none; color: var(--muted);
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  #pasteLrcBtn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+
+  #lrcPasteArea {
+    display: none; flex-direction: column; gap: 7px; margin-top: 7px;
+  }
+  #lrcPasteArea.visible { display: flex; }
+  #lrcTextarea {
+    width: 100%; height: 120px;
+    background: var(--bg);
+    border: 1px solid var(--accent2);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: .78rem; font-family: monospace; line-height: 1.6;
+    padding: 9px 11px; resize: vertical; outline: none;
+  }
+  #lrcTextarea::placeholder { color: var(--muted); font-style: italic; }
+
+  /* Propose / Copy */
+  #proposeBtn, #copyLrcBtn {
+    display: none; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px; border: 1px solid var(--accent);
+    background: none; color: var(--accent2);
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: background .15s;
+  }
+  #proposeBtn.visible, #copyLrcBtn.visible { display: flex; }
+  #proposeBtn:hover, #copyLrcBtn:hover { background: rgba(124,58,237,.15); }
+  #proposeBtn:disabled, #copyLrcBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+  #syncStatus {
+    font-size: .78rem;
+    color: var(--muted);
+    flex: 1;
+    min-width: 0;
+  }
+  #syncStatus.error { color: var(--danger); }
+  #syncStatus.ok { color: var(--green); }
+
+  /* Spinner */
+  .spinner {
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid rgba(255,255,255,.25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">WRLD Sync</div>
+  <div class="search-wrap">
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input id="searchInput" type="text" placeholder="Search songs…" autocomplete="off" />
+  </div>
+
+  <!-- Random + filter -->
+  <div class="random-wrap">
+    <button id="randomBtn" class="hbtn" title="Load a random song">
+      <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
+        <polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
+      </svg>
+    </button>
+    <button id="randomFilterBtn" class="hbtn" title="Filter random songs" style="padding:5px 4px">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
+      </svg>
+    </button>
+    <div id="randomFilterPopover">
+      <div class="rf-title">Lyrics filter</div>
+      <div class="rf-group">
+        <label class="rf-option"><input type="radio" name="rfLyrics" value="" checked /> Any</label>
+        <label class="rf-option"><input type="radio" name="rfLyrics" value="no_lyrics" /> Missing lyrics</label>
+        <label class="rf-option"><input type="radio" name="rfLyrics" value="no_synced" /> Missing synced lyrics</label>
+        <label class="rf-option"><input type="radio" name="rfLyrics" value="missing_both" /> Missing both</label>
+        <label class="rf-option"><input type="radio" name="rfLyrics" value="missing_either" /> Missing either</label>
+      </div>
+      <div class="rf-group">
+        <div class="rf-title">Category</div>
+        <label class="rf-option"><input type="radio" name="rfCat" value="" checked /> Any</label>
+        <label class="rf-option"><input type="radio" name="rfCat" value="released" /> Released</label>
+        <label class="rf-option"><input type="radio" name="rfCat" value="unreleased" /> Unreleased</label>
+        <label class="rf-option"><input type="radio" name="rfCat" value="unsurfaced" /> Unsurfaced</label>
+        <label class="rf-option"><input type="radio" name="rfCat" value="recording_session" /> Session</label>
+      </div>
+    </div>
+  </div>
+
+  <button id="settingsBtn" class="hbtn" title="Settings">
+    <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  </button>
+</header>
+
+<div id="settingsPanel">
+  <div class="sg">
+    <label for="tokenInput">API Token</label>
+    <div class="token-wrap">
+      <input id="tokenInput" type="password" placeholder="Paste your juicewrldapi token…" autocomplete="off" />
+      <button id="showTokenBtn" title="Show token">
+        <svg id="eyeIcon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <button id="saveTokenBtn">Save</button>
+    <span id="tokenStatus" class="token-status"></span>
+  </div>
+  <div class="sg">
+    <label for="modelSelect">Whisper Model</label>
+    <select id="modelSelect">
+      <option value="tiny">tiny — fastest</option>
+      <option value="base">base — fast</option>
+      <option value="small" selected>small — balanced</option>
+      <option value="medium">medium — better</option>
+      <option value="large">large — great</option>
+      <option value="large-v2">large-v2 — best</option>
+      <option value="large-v3">large-v3 — best</option>
+    </select>
+    <span id="modelStatus" class="model-status"></span>
+  </div>
+</div>
+
+<main>
+  <!-- Left: song list -->
+  <div id="resultsPanel">
+    <div class="results-header">
+      <span class="results-header-text" id="resultsHeaderText">Type to search</span>
+      <button class="icon-btn-sm" id="collapseSidebarBtn" title="Collapse sidebar">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
+    </div>
+    <div id="resultsList"></div>
+  </div>
+
+  <!-- Right: player -->
+  <div id="playerPanel">
+    <button id="expandSidebarBtn">
+      <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+      Songs
+    </button>
+
+    <div id="emptyState">
+      <svg width="60" height="60" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      <p>Search for a song and select it to start</p>
+    </div>
+
+    <div id="nowPlaying">
+      <!-- Song info -->
+      <div class="np-top">
+        <img id="npArt" class="np-art" src="" alt="" />
+        <div class="np-info">
+          <div id="npTitle" class="np-title">—</div>
+          <div id="npArtist" class="np-artist">Juice WRLD</div>
+          <div class="np-tags">
+            <span id="npCategory" class="np-tag"></span>
+            <span id="npEra" class="np-tag"></span>
+            <span id="npLength" class="np-tag"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-scroll resume bar — outside lyricsSection so it doesn't scroll away -->
+      <button id="resumeFollowBtn">
+        <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+        </svg>
+        Resume auto-scroll
+      </button>
+
+      <!-- Lyrics (scrollable) -->
+      <div id="lyricsSection">
+        <div class="lyrics-tabs">
+          <button class="tab-btn active" data-tab="karaoke">Synced</button>
+          <button class="tab-btn" data-tab="plain">Lyrics</button>
+          <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;Ctrl+Space play</span>
+        </div>
+
+        <div class="lyrics-body">
+          <div id="karaokeView">
+            <div class="karaoke-lines" id="karaokeLines">
+              <span style="color:var(--muted);font-size:.88rem">
+                Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.
+              </span>
+            </div>
+          </div>
+
+          <div id="plainLyricsView">
+            <div class="lyrics-edit-bar">
+              <span id="lyricsSrcTag" class="lyrics-src-tag">API</span>
+              <button id="resetLyricsBtn" class="lyr-btn" style="display:none">
+                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                </svg>
+                Reset
+              </button>
+              <button id="geniusBtn" class="lyr-btn">
+                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Search Genius
+              </button>
+              <button id="verifyBtn" class="lyr-btn">
+                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+                Verify
+              </button>
+              <button id="geniusUrlBtn" class="lyr-btn">
+                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                Paste URL
+              </button>
+              <input id="geniusUrlInput" type="url" placeholder="https://genius.com/… (Enter to fetch)" />
+            </div>
+
+            <div id="verifyPanel">
+              <div class="verify-summary">
+                <span class="v-count v-present" id="vCountPresent">✓ 0 confirmed</span>
+                <span class="v-count v-uncertain" id="vCountUncertain">? 0 uncertain</span>
+                <span class="v-count v-absent" id="vCountAbsent">✗ 0 absent</span>
+              </div>
+              <div class="verify-actions">
+                <button class="vbtn danger" id="removeAbsentBtn">Remove absent</button>
+                <button class="vbtn" id="removeUncertainBtn">Remove absent + uncertain</button>
+                <button class="vbtn" id="showAbsentBtn">Show absent</button>
+                <button class="vbtn" id="dismissVerifyBtn">Dismiss</button>
+              </div>
+              <div class="verify-absent-lines" id="verifyAbsentLines"></div>
+            </div>
+
+            <textarea id="plainLyricsText" spellcheck="false" placeholder="No lyrics — paste here or search Genius above…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls bar (floating at bottom) -->
+      <div class="controls">
+        <audio id="audioPlayer" controls></audio>
+        <div class="sync-row">
+          <button id="syncBtn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            Sync
+          </button>
+          <button id="autoWhisperBtn" title="Auto: fetch lyrics → verify → sync automatically">
+            ⚡ Auto
+          </button>
+          <button id="pasteLrcBtn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <rect x="8" y="2" width="8" height="4" rx="1"/>
+            </svg>
+            LRC
+          </button>
+          <button id="copyLrcBtn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy LRC
+          </button>
+          <button id="proposeBtn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+            Propose
+          </button>
+          <span id="syncStatus"></span>
+        </div>
+        <div id="lrcPasteArea">
+          <textarea id="lrcTextarea" placeholder="[0:00.00] Line one&#10;[0:04.20] Line two&#10;…"></textarea>
+        </div>
+        <div id="syncProgress">
+          <div class="prog-label">
+            <span id="progMsg">—</span>
+            <span id="progPct"></span>
+          </div>
+          <div class="prog-track">
+            <div class="prog-fill" id="progFill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let currentSong    = null;
+let syncedLines    = [];
+let activeLineIdx  = -1;
+let pinnedIdx      = -1;
+let activeTab      = 'karaoke';
+let customLyrics   = '';
+let lastVerifyResults = [];
+let autoFollow     = true;
+let progScroll     = false; // true while scrollIntoView is running
+
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const searchInput      = document.getElementById('searchInput');
+const resultsList      = document.getElementById('resultsList');
+const resultsHeaderText= document.getElementById('resultsHeaderText');
+const emptyState       = document.getElementById('emptyState');
+const nowPlaying       = document.getElementById('nowPlaying');
+const npArt            = document.getElementById('npArt');
+const npTitle          = document.getElementById('npTitle');
+const npArtist         = document.getElementById('npArtist');
+const npCategory       = document.getElementById('npCategory');
+const npEra            = document.getElementById('npEra');
+const npLength         = document.getElementById('npLength');
+const audioPlayer      = document.getElementById('audioPlayer');
+const syncBtn          = document.getElementById('syncBtn');
+const autoWhisperBtn   = document.getElementById('autoWhisperBtn');
+const syncStatus       = document.getElementById('syncStatus');
+const syncProgress     = document.getElementById('syncProgress');
+const progMsg          = document.getElementById('progMsg');
+const progPct          = document.getElementById('progPct');
+const progFill         = document.getElementById('progFill');
+const karaokeView      = document.getElementById('karaokeView');
+const karaokeLines     = document.getElementById('karaokeLines');
+const plainLyricsView  = document.getElementById('plainLyricsView');
+const plainLyricsText  = document.getElementById('plainLyricsText');
+const lyricsSection    = document.getElementById('lyricsSection');
+const resumeFollowBtn  = document.getElementById('resumeFollowBtn');
+const randomBtn        = document.getElementById('randomBtn');
+const randomFilterBtn  = document.getElementById('randomFilterBtn');
+const randomFilterPopover = document.getElementById('randomFilterPopover');
+const pasteLrcBtn      = document.getElementById('pasteLrcBtn');
+const lrcPasteArea     = document.getElementById('lrcPasteArea');
+const lrcTextarea      = document.getElementById('lrcTextarea');
+const lyricsSrcTag     = document.getElementById('lyricsSrcTag');
+const resetLyricsBtn   = document.getElementById('resetLyricsBtn');
+const verifyBtn        = document.getElementById('verifyBtn');
+const verifyPanel      = document.getElementById('verifyPanel');
+const vCountPresent    = document.getElementById('vCountPresent');
+const vCountUncertain  = document.getElementById('vCountUncertain');
+const vCountAbsent     = document.getElementById('vCountAbsent');
+const removeAbsentBtn  = document.getElementById('removeAbsentBtn');
+const removeUncertainBtn = document.getElementById('removeUncertainBtn');
+const showAbsentBtn    = document.getElementById('showAbsentBtn');
+const dismissVerifyBtn = document.getElementById('dismissVerifyBtn');
+const verifyAbsentLines= document.getElementById('verifyAbsentLines');
+const geniusBtn        = document.getElementById('geniusBtn');
+const geniusUrlBtn     = document.getElementById('geniusUrlBtn');
+const geniusUrlInput   = document.getElementById('geniusUrlInput');
+const settingsBtn      = document.getElementById('settingsBtn');
+const settingsPanel    = document.getElementById('settingsPanel');
+const tokenInput       = document.getElementById('tokenInput');
+const showTokenBtn     = document.getElementById('showTokenBtn');
+const saveTokenBtn     = document.getElementById('saveTokenBtn');
+const tokenStatus      = document.getElementById('tokenStatus');
+const proposeBtn       = document.getElementById('proposeBtn');
+const copyLrcBtn       = document.getElementById('copyLrcBtn');
+const modelSelect      = document.getElementById('modelSelect');
+const modelStatus      = document.getElementById('modelStatus');
+const collapseSidebarBtn = document.getElementById('collapseSidebarBtn');
+const expandSidebarBtn   = document.getElementById('expandSidebarBtn');
+const mainEl             = document.querySelector('main');
+
+// ── Sidebar collapse ──────────────────────────────────────────────────────
+if (localStorage.getItem('jw_sidebar') === '0') mainEl.classList.add('sidebar-collapsed');
+collapseSidebarBtn.addEventListener('click', () => {
+  mainEl.classList.add('sidebar-collapsed');
+  localStorage.setItem('jw_sidebar', '0');
+});
+expandSidebarBtn.addEventListener('click', () => {
+  mainEl.classList.remove('sidebar-collapsed');
+  localStorage.removeItem('jw_sidebar');
+});
+
+// ── Auto-follow (pause on manual scroll) ─────────────────────────────────
+lyricsSection.addEventListener('scroll', () => {
+  if (progScroll) return;
+  if (autoFollow) {
+    autoFollow = false;
+    resumeFollowBtn.classList.add('visible');
+  }
+});
+resumeFollowBtn.addEventListener('click', () => {
+  autoFollow = true;
+  resumeFollowBtn.classList.remove('visible');
+  if (activeLineIdx >= 0) applyHighlight(activeLineIdx, true, false);
+});
+
+// ── Random filter popover ─────────────────────────────────────────────────
+randomFilterBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  randomFilterPopover.classList.toggle('visible');
+});
+document.addEventListener('click', (e) => {
+  if (!randomFilterPopover.contains(e.target) && e.target !== randomFilterBtn)
+    randomFilterPopover.classList.remove('visible');
+});
+
+// ── Random song ───────────────────────────────────────────────────────────
+randomBtn.addEventListener('click', async () => {
+  randomBtn.disabled = true;
+  randomBtn.classList.add('spinning');
+  try {
+    const lyricsFilter = document.querySelector('input[name="rfLyrics"]:checked')?.value ?? '';
+    const category = document.querySelector('input[name="rfCat"]:checked')?.value ?? '';
+    const p = new URLSearchParams();
+    if (lyricsFilter === 'no_lyrics') p.set('no_lyrics', '1');
+    else if (lyricsFilter === 'no_synced') p.set('no_synced', '1');
+    else if (lyricsFilter === 'missing_both') { p.set('no_lyrics', '1'); p.set('no_synced', '1'); }
+    else if (lyricsFilter === 'missing_either') p.set('missing_either', '1');
+    if (category) p.set('category', category);
+    const qs = p.toString();
+    const data = await api('/api/radio/random' + (qs ? '?' + qs : ''));
+    const song = data.song;
+    if (!song?.id) throw new Error('No song in response');
+    document.querySelectorAll('.song-card').forEach(c => c.classList.remove('active'));
+    await loadSongData(song);
+  } catch (e) {
+    setSyncStatus('Random: ' + (e.message ?? e), 'error');
+  } finally {
+    randomBtn.disabled = false;
+    randomBtn.classList.remove('spinning');
+  }
+});
+
+// ── Search ────────────────────────────────────────────────────────────────
+let searchTimer = null;
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = searchInput.value.trim();
+  if (!q) { resultsList.innerHTML = ''; resultsHeaderText.textContent = 'Type to search'; return; }
+  searchTimer = setTimeout(() => doSearch(q), 380);
+});
+
+async function doSearch(q) {
+  resultsHeaderText.textContent = 'Searching…';
+  resultsList.innerHTML = '';
+  try {
+    const data = await api('/api/search?q=' + encodeURIComponent(q));
+    const songs = data.results ?? [];
+    resultsHeaderText.textContent = `${songs.length} result${songs.length !== 1 ? 's' : ''} for "${q}"`;
+    if (!songs.length) {
+      resultsList.innerHTML = '<div style="padding:18px;color:var(--muted);font-size:.88rem;text-align:center">No songs found</div>';
+      return;
+    }
+    resultsList.innerHTML = songs.map(songCardHTML).join('');
+    resultsList.querySelectorAll('.song-card').forEach(el =>
+      el.addEventListener('click', () => loadSong(Number(el.dataset.id)))
+    );
+  } catch (e) {
+    resultsHeaderText.textContent = 'Search failed';
+  }
+}
+
+function songCardHTML(s) {
+  const thumb = s.image_url
+    ? `<img class="song-thumb" src="https://juicewrldapi.com${s.image_url}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="song-thumb-placeholder" style="display:none">♪</div>`
+    : `<div class="song-thumb-placeholder">♪</div>`;
+  const title = (s.track_titles?.[0] ?? s.name) || s.name;
+  const era = s.era?.name ?? '';
+  const cat = s.category ?? '';
+  return `<div class="song-card" data-id="${s.id}"${s.path ? '' : ' style="opacity:.5"'}>
+    ${thumb}
+    <div class="song-meta">
+      <div class="song-name">${esc(title)}</div>
+      <div class="song-sub">${esc(era)}${era && s.length ? ' · ' : ''}${esc(s.length ?? '')}</div>
+    </div>
+    ${cat ? `<span class="song-badge badge-${cat}">${cat}</span>` : ''}
+  </div>`;
+}
+
+// ── Load song ─────────────────────────────────────────────────────────────
+async function loadSong(id) {
+  document.querySelectorAll('.song-card').forEach(c => c.classList.toggle('active', Number(c.dataset.id) === id));
+  const song = await api(`/api/song/${id}`);
+  await loadSongData(song);
+}
+
+async function loadSongData(song) {
+  syncedLines = []; activeLineIdx = -1; customLyrics = '';
+  setSyncStatus('');
+  syncBtn.disabled = false; autoWhisperBtn.disabled = false;
+  setKaraokeDefault();
+  autoFollow = true; resumeFollowBtn.classList.remove('visible');
+  proposeBtn.classList.remove('visible'); copyLrcBtn.classList.remove('visible');
+  verifyPanel.classList.remove('visible');
+
+  try {
+    currentSong = song;
+    npTitle.textContent = song.track_titles?.[0] ?? song.name;
+    const artists = song.credited_artists;
+    npArtist.textContent = Array.isArray(artists) ? artists.join(', ') : (artists || 'Juice WRLD');
+    npCategory.textContent = song.category ?? '';
+    npEra.textContent = song.era?.name ?? '';
+    npLength.textContent = song.length ?? '';
+
+    if (song.image_url) { npArt.src = `https://juicewrldapi.com${song.image_url}`; npArt.style.display = ''; }
+    else { npArt.src = ''; npArt.style.display = 'none'; }
+
+    if (song.path) {
+      audioPlayer.src = `/api/stream?path=${encodeURIComponent(song.path)}`;
+      audioPlayer.load();
+    } else {
+      audioPlayer.src = '';
+      syncBtn.disabled = true; autoWhisperBtn.disabled = true;
+      setSyncStatus('No audio file for this song.', 'error');
+    }
+
+    plainLyricsText.value = song.lyrics || '';
+    customLyrics = '';
+    updateLyricsSrc('api', !!song.lyrics);
+
+    if (song.synced_lyrics) {
+      const parsed = parseLRC(song.synced_lyrics);
+      if (parsed.length) {
+        syncedLines = parsed;
+        renderKaraoke(syncedLines);
+        setSyncStatus('Loaded synced lyrics from API ✓', 'ok');
+        maybeShowPropose();
+      }
+    }
+
+    emptyState.style.display = 'none';
+    nowPlaying.classList.add('visible');
+    setTab('karaoke');
+  } catch (e) {
+    setSyncStatus('Failed to load song.', 'error');
+  }
+}
+
+// ── Whisper sync (SSE) ────────────────────────────────────────────────────
+syncBtn.addEventListener('click', () => runSync());
+
+async function runSync(lyricsOverride) {
+  if (!currentSong) return;
+  syncBtn.disabled = true; autoWhisperBtn.disabled = true;
+  setSyncStatus(''); showProgress('Starting…', 0);
+
+  return new Promise((resolve, reject) => {
+    const lyrics = lyricsOverride !== undefined ? lyricsOverride : plainLyricsText.value.trim();
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song_id: currentSong.id, lyrics }),
+    }).then(resp => {
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      const read = () => reader.read().then(({ done, value }) => {
+        if (done) { resolve(); return; }
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n'); buf = parts.pop();
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          try { handleSyncEvent(JSON.parse(part.slice(6))); } catch {}
+        }
+        read();
+      }).catch(err => { reject(err); });
+      read();
+    }).catch(e => {
+      setSyncStatus('Sync failed: ' + (e.message ?? e), 'error');
+      hideProgress();
+      syncBtn.disabled = false; autoWhisperBtn.disabled = false;
+      reject(e);
+    });
+  });
+}
+
+function handleSyncEvent(ev) {
+  if (ev.stage === 'fetching') showProgress(ev.msg, 2);
+  else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.45);
+  else if (ev.stage === 'loading') showProgress(ev.msg, 52, true);
+  else if (ev.stage === 'aligning') showProgress(ev.msg, 55 + ((ev.pct ?? 0) / 95) * 44);
+  else if (ev.stage === 'done') {
+    hideProgress();
+    syncedLines = ev.lines ?? [];
+    if (syncedLines.length) {
+      renderKaraoke(syncedLines);
+      setTab('karaoke');
+      setSyncStatus(`Synced ${syncedLines.length} lines ✓`, 'ok');
+      maybeShowPropose();
+    } else {
+      setSyncStatus('No lines returned.', 'error');
+    }
+    syncBtn.disabled = false; autoWhisperBtn.disabled = false;
+  } else if (ev.stage === 'error') {
+    hideProgress();
+    setSyncStatus('Error: ' + ev.msg, 'error');
+    syncBtn.disabled = false; autoWhisperBtn.disabled = false;
+  }
+}
+
+// ── Auto-whisper pipeline ─────────────────────────────────────────────────
+autoWhisperBtn.addEventListener('click', autoWhisper);
+
+async function autoWhisper() {
+  if (!currentSong) return;
+  autoWhisperBtn.disabled = true; syncBtn.disabled = true;
+
+  try {
+    // 1. Ensure lyrics
+    let lyrics = plainLyricsText.value.trim();
+    if (!lyrics) {
+      setSyncStatus('<span class="spinner"></span> Auto: searching Genius…', '');
+      const rawTitle = (currentSong.track_titles?.[0] ?? currentSong.name) || '';
+      const title = rawTitle.replace(/\s*[\[({].*?[\])}]\s*/g, '').trim();
+      try {
+        const data = await api(`/api/genius?title=${encodeURIComponent(title)}&artist=${encodeURIComponent('Juice WRLD')}`);
+        lyrics = data.lyrics || '';
+        if (lyrics) {
+          plainLyricsText.value = lyrics;
+          customLyrics = lyrics;
+          updateLyricsSrc('genius', true);
+          setTab('plain');
+        }
+      } catch {}
+      if (!lyrics) {
+        setSyncStatus('Auto: no lyrics found on Genius — paste them manually then retry.', 'error');
+        autoWhisperBtn.disabled = false; syncBtn.disabled = false; return;
+      }
+    }
+
+    // 2. Verify
+    setSyncStatus('<span class="spinner"></span> Auto: verifying lyrics…', '');
+    showProgress('Verifying…', 0);
+    let verifyOk = false;
+    let cleanedLyrics = lyrics;
+
+    await new Promise((res, rej) => {
+      fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ song_id: currentSong.id, lyrics }),
+      }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        const read = () => reader.read().then(({ done, value }) => {
+          if (done) { res(); return; }
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split('\n'); buf = parts.pop();
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue;
+            try {
+              const ev = JSON.parse(part.slice(6));
+              if (ev.stage === 'fetching') showProgress(ev.msg, 2);
+              else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.3);
+              else if (ev.stage === 'loading') showProgress(ev.msg, 38, true);
+              else if (ev.stage === 'transcribing') showProgress('Verifying…', 42 + ((ev.pct ?? 0) / 95) * 48);
+              else if (ev.stage === 'done') {
+                lastVerifyResults = ev.results ?? [];
+                showVerifyResults(ev.counts ?? {});
+                const total = lastVerifyResults.length;
+                const absentRatio = total > 0 ? (ev.counts?.absent ?? 0) / total : 0;
+                if (absentRatio <= 0.2) {
+                  const kept = lastVerifyResults.filter(r => r.status !== 'absent').map(r => r.line);
+                  cleanedLyrics = kept.join('\n');
+                  plainLyricsText.value = cleanedLyrics;
+                  customLyrics = cleanedLyrics;
+                  updateLyricsSrc('edited', true);
+                  verifyOk = true;
+                } else {
+                  setSyncStatus(`Auto: ${ev.counts?.absent ?? 0} absent lines (${Math.round(absentRatio*100)}%) — review results then sync manually.`, 'error');
+                }
+              } else if (ev.stage === 'error') rej(new Error(ev.msg));
+            } catch {}
+          }
+          read();
+        }).catch(rej);
+        read();
+      }).catch(rej);
+    });
+
+    hideProgress();
+    if (!verifyOk) { autoWhisperBtn.disabled = false; syncBtn.disabled = false; return; }
+
+    // 3. Sync
+    setSyncStatus('<span class="spinner"></span> Auto: syncing…', '');
+    await runSync(cleanedLyrics);
+    if (syncedLines.length) {
+      setSyncStatus(`Auto done — ${syncedLines.length} lines synced ✓  Review and Propose when ready.`, 'ok');
+      setTab('karaoke');
+    }
+  } catch (e) {
+    hideProgress();
+    setSyncStatus('Auto failed: ' + (e.message ?? e), 'error');
+    autoWhisperBtn.disabled = false; syncBtn.disabled = false;
+  }
+}
+
+// ── Progress ──────────────────────────────────────────────────────────────
+function showProgress(msg, pct, indeterminate = false) {
+  syncProgress.classList.add('visible');
+  progMsg.textContent = msg;
+  if (indeterminate) {
+    progPct.textContent = '';
+    progFill.style.width = '40%';
+    progFill.classList.add('indeterminate');
+  } else {
+    progPct.textContent = pct > 0 ? Math.round(pct) + '%' : '';
+    progFill.classList.remove('indeterminate');
+    progFill.style.width = pct + '%';
+  }
+}
+function hideProgress() {
+  syncProgress.classList.remove('visible');
+  progFill.classList.remove('indeterminate');
+  progFill.style.width = '0%';
+}
+
+// ── Karaoke ───────────────────────────────────────────────────────────────
+function renderKaraoke(lines) {
+  karaokeLines.innerHTML = lines.map((l, i) =>
+    `<div class="kl future" data-i="${i}">
+       <span class="kl-text">${esc(l.line ?? l.word)}</span>
+       <span class="kl-time" data-time-i="${i}" title="Click to adjust timing">${fmtTime(l.start)}</span>
+     </div>`
+  ).join('');
+}
+function setKaraokeDefault() {
+  karaokeLines.innerHTML = '<span style="color:var(--muted);font-size:.88rem">Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.</span>';
+}
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  return `${m}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+}
+
+function applyHighlight(idx, scroll = true, instant = false) {
+  const divs = karaokeLines.querySelectorAll('.kl');
+  divs.forEach((d, i) => {
+    d.className = 'kl ' + (i < idx ? 'past' : i === idx ? 'current' : 'future');
+  });
+  if (scroll && idx >= 0 && divs[idx] && autoFollow) {
+    progScroll = true;
+    divs[idx].scrollIntoView({ block: 'center', behavior: instant ? 'instant' : 'smooth' });
+    setTimeout(() => { progScroll = false; }, 700);
+  }
+}
+
+audioPlayer.addEventListener('timeupdate', () => {
+  if (!syncedLines.length) return;
+  const t = audioPlayer.currentTime;
+  let idx = -1;
+  for (let i = 0; i < syncedLines.length; i++) {
+    if (syncedLines[i].start <= t) idx = i;
+    else break;
+  }
+  if (idx === activeLineIdx) return;
+  activeLineIdx = idx;
+  if (pinnedIdx < 0) applyHighlight(idx);
+});
+
+// Click to seek / edit time chip
+karaokeLines.addEventListener('click', (e) => {
+  const chip = e.target.closest('.kl-time');
+  if (chip) { e.stopPropagation(); editTime(chip, Number(chip.dataset.timeI)); return; }
+  const div = e.target.closest('.kl');
+  if (!div || div.classList.contains('editing')) return;
+  const idx = Number(div.dataset.i);
+  if (!isNaN(idx) && syncedLines[idx]) {
+    audioPlayer.currentTime = syncedLines[idx].start;
+    if (audioPlayer.paused) audioPlayer.play();
+  }
+});
+
+// Double-click to edit line text
+karaokeLines.addEventListener('dblclick', (e) => {
+  if (e.target.closest('.kl-time')) return;
+  const div = e.target.closest('.kl');
+  if (!div) return;
+  const idx = Number(div.dataset.i);
+  if (isNaN(idx) || !syncedLines[idx]) return;
+  div.classList.add('editing');
+  const original = syncedLines[idx].line;
+  const textSpan = div.querySelector('.kl-text');
+  const chip = div.querySelector('.kl-time');
+  if (chip) chip.style.display = 'none';
+  const input = document.createElement('input');
+  input.type = 'text'; input.value = original; input.className = 'kl-input';
+  textSpan.replaceWith(input); input.focus(); input.select();
+  const confirm = () => {
+    const val = input.value.trim();
+    syncedLines[idx].line = val || original;
+    div.classList.remove('editing');
+    if (chip) chip.style.display = '';
+    const newSpan = document.createElement('span');
+    newSpan.className = 'kl-text'; newSpan.textContent = syncedLines[idx].line;
+    input.replaceWith(newSpan);
+  };
+  input.addEventListener('blur', confirm);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = original; input.blur(); }
+  });
+});
+
+function editTime(chip, idx) {
+  if (isNaN(idx) || !syncedLines[idx]) return;
+  const original = syncedLines[idx].start;
+  const input = document.createElement('input');
+  input.type = 'number'; input.step = '0.1'; input.min = '0';
+  input.value = original.toFixed(1); input.className = 'kl-time-input';
+  chip.replaceWith(input); input.focus(); input.select();
+  const confirm = () => {
+    const val = parseFloat(input.value);
+    if (!isNaN(val) && val >= 0) syncedLines[idx].start = Math.round(val * 1000) / 1000;
+    const newChip = document.createElement('span');
+    newChip.className = 'kl-time'; newChip.dataset.timeI = String(idx);
+    newChip.title = 'Click to adjust timing';
+    newChip.textContent = fmtTime(syncedLines[idx].start);
+    input.replaceWith(newChip);
+  };
+  input.addEventListener('blur', confirm);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+    if (e.key === 'Escape') { syncedLines[idx].start = original; input.value = original.toFixed(1); input.blur(); }
+  });
+}
+
+// ── Verify lyrics ─────────────────────────────────────────────────────────
+verifyBtn.addEventListener('click', async () => {
+  if (!currentSong) return;
+  const lyrics = plainLyricsText.value.trim();
+  if (!lyrics) { setSyncStatus('Add lyrics first.', 'error'); setTab('plain'); return; }
+  verifyBtn.disabled = true;
+  verifyBtn.innerHTML = '<span class="spinner"></span>';
+  verifyPanel.classList.remove('visible');
+  showProgress('Starting verification…', 0);
+
+  try {
+    const resp = await fetch('/api/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song_id: currentSong.id, lyrics }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder(); let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n'); buf = parts.pop();
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(part.slice(6));
+          if (ev.stage === 'fetching') showProgress(ev.msg, 2);
+          else if (ev.stage === 'downloading') showProgress(ev.msg, 5 + (ev.pct ?? 0) * 0.35);
+          else if (ev.stage === 'loading') showProgress(ev.msg, 42, true);
+          else if (ev.stage === 'transcribing') showProgress(ev.msg, 45 + ((ev.pct ?? 0) / 95) * 50);
+          else if (ev.stage === 'done') {
+            hideProgress(); lastVerifyResults = ev.results ?? [];
+            showVerifyResults(ev.counts ?? {}); setTab('plain');
+            setSyncStatus('Verification done — review and clean up then sync.', 'ok');
+          } else if (ev.stage === 'error') {
+            hideProgress(); setSyncStatus('Verify error: ' + ev.msg, 'error');
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    hideProgress(); setSyncStatus('Verify failed: ' + (e.message ?? e), 'error');
+  } finally {
+    verifyBtn.disabled = false;
+    verifyBtn.innerHTML = `<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Verify`;
+  }
+});
+
+function showVerifyResults(counts) {
+  vCountPresent.textContent  = `✓ ${counts.present ?? 0} confirmed`;
+  vCountUncertain.textContent= `? ${counts.uncertain ?? 0} uncertain`;
+  vCountAbsent.textContent   = `✗ ${counts.absent ?? 0} absent`;
+  verifyAbsentLines.classList.remove('visible');
+  verifyAbsentLines.innerHTML = '';
+  verifyPanel.classList.add('visible');
+}
+function applyVerifyFilter(removeStatuses) {
+  const keep = lastVerifyResults.filter(r => !removeStatuses.includes(r.status)).map(r => r.line);
+  plainLyricsText.value = keep.join('\n');
+  customLyrics = plainLyricsText.value;
+  updateLyricsSrc('edited', !!plainLyricsText.value);
+  verifyPanel.classList.remove('visible');
+  setSyncStatus(`Removed ${lastVerifyResults.length - keep.length} lines — ready to sync.`, 'ok');
+}
+removeAbsentBtn.addEventListener('click', () => applyVerifyFilter(['absent']));
+removeUncertainBtn.addEventListener('click', () => applyVerifyFilter(['absent', 'uncertain']));
+showAbsentBtn.addEventListener('click', () => {
+  const absent = lastVerifyResults.filter(r => r.status === 'absent');
+  verifyAbsentLines.innerHTML = absent.length
+    ? absent.map(r => `<p>✗ ${esc(r.line)}</p>`).join('')
+    : '<p>No absent lines.</p>';
+  verifyAbsentLines.classList.toggle('visible');
+  showAbsentBtn.textContent = verifyAbsentLines.classList.contains('visible') ? 'Hide absent' : 'Show absent';
+});
+dismissVerifyBtn.addEventListener('click', () => {
+  verifyPanel.classList.remove('visible'); lastVerifyResults = [];
+});
+
+// ── Lyrics editing ────────────────────────────────────────────────────────
+function updateLyricsSrc(src, hasContent) {
+  const labels = { api: 'API', genius: 'Genius', manual: 'Manual', edited: 'Edited' };
+  lyricsSrcTag.textContent = hasContent ? labels[src] || src : 'No lyrics';
+  lyricsSrcTag.classList.toggle('edited', src !== 'api');
+  resetLyricsBtn.style.display = (src !== 'api' && currentSong?.lyrics) ? '' : 'none';
+}
+plainLyricsText.addEventListener('input', () => {
+  const val = plainLyricsText.value;
+  customLyrics = val;
+  const src = val === (currentSong?.lyrics || '') ? 'api' : (val ? 'edited' : 'api');
+  updateLyricsSrc(src, !!val);
+});
+resetLyricsBtn.addEventListener('click', () => {
+  if (!currentSong?.lyrics) return;
+  plainLyricsText.value = currentSong.lyrics;
+  customLyrics = '';
+  updateLyricsSrc('api', true);
+});
+
+async function fetchFromGenius(params) {
+  const data = await api('/api/genius?' + new URLSearchParams(params).toString());
+  plainLyricsText.value = data.lyrics || '';
+  customLyrics = plainLyricsText.value;
+  updateLyricsSrc('genius', !!data.lyrics);
+  setTab('plain');
+  setSyncStatus(`Genius: ${data.title} — hit Sync to align.`, 'ok');
+}
+
+geniusBtn.addEventListener('click', async () => {
+  if (!currentSong) return;
+  const rawTitle = (currentSong.track_titles?.[0] ?? currentSong.name) || '';
+  const title = rawTitle.replace(/\s*[\[({].*?[\])}]\s*/g, '').trim();
+  geniusBtn.disabled = true;
+  geniusBtn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await fetchFromGenius({ title, artist: 'Juice WRLD' });
+  } catch (e) {
+    setSyncStatus('Genius: ' + (e.message ?? e), 'error'); setTab('plain');
+  } finally {
+    geniusBtn.disabled = false;
+    geniusBtn.innerHTML = `<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search Genius`;
+  }
+});
+
+geniusUrlBtn.addEventListener('click', () => {
+  geniusUrlInput.classList.toggle('visible');
+  if (geniusUrlInput.classList.contains('visible')) {
+    geniusUrlInput.focus();
+    navigator.clipboard.readText().then(t => { if (t.includes('genius.com')) geniusUrlInput.value = t.trim(); }).catch(() => {});
+  } else { geniusUrlInput.value = ''; }
+});
+async function fetchGeniusUrl() {
+  const url = geniusUrlInput.value.trim();
+  if (!url || !url.includes('genius.com')) return;
+  geniusUrlBtn.disabled = true; geniusUrlInput.disabled = true;
+  try {
+    await fetchFromGenius({ url });
+    geniusUrlInput.classList.remove('visible'); geniusUrlInput.value = '';
+  } catch (e) {
+    setSyncStatus('Genius URL: ' + (e.message ?? e), 'error');
+  } finally { geniusUrlBtn.disabled = false; geniusUrlInput.disabled = false; }
+}
+geniusUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') fetchGeniusUrl();
+  if (e.key === 'Escape') { geniusUrlInput.classList.remove('visible'); geniusUrlInput.value = ''; }
+});
+geniusUrlInput.addEventListener('paste', () => setTimeout(fetchGeniusUrl, 50));
+
+// ── Paste LRC ─────────────────────────────────────────────────────────────
+pasteLrcBtn.addEventListener('click', () => {
+  const open = lrcPasteArea.classList.toggle('visible');
+  if (open) {
+    lrcTextarea.focus();
+    navigator.clipboard.readText().then(t => {
+      if (t.includes('[') && t.includes(':')) { lrcTextarea.value = t.trim(); loadLrc(); }
+    }).catch(() => {});
+  } else { lrcTextarea.value = ''; }
+});
+function loadLrc() {
+  const lines = parseLRC(lrcTextarea.value.trim());
+  if (!lines.length) { setSyncStatus('No valid LRC timestamps found.', 'error'); return; }
+  syncedLines = lines; renderKaraoke(syncedLines); setTab('karaoke');
+  setSyncStatus(`Loaded ${lines.length} lines from LRC ✓`, 'ok'); maybeShowPropose();
+  lrcPasteArea.classList.remove('visible'); lrcTextarea.value = '';
+}
+lrcTextarea.addEventListener('paste', () => setTimeout(loadLrc, 30));
+lrcTextarea.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.ctrlKey) loadLrc();
+  if (e.key === 'Escape') { lrcPasteArea.classList.remove('visible'); lrcTextarea.value = ''; }
+});
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn =>
+  btn.addEventListener('click', () => setTab(btn.dataset.tab))
+);
+function setTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  karaokeView.classList.toggle('visible', tab === 'karaoke');
+  plainLyricsView.classList.toggle('visible', tab === 'plain');
+}
+setTab('karaoke');
+
+// ── LRC parser ────────────────────────────────────────────────────────────
+function parseLRC(lrc) {
+  const timeRe = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+  const words = [];
+  for (const line of lrc.split('\n')) {
+    const times = []; let m; timeRe.lastIndex = 0;
+    while ((m = timeRe.exec(line)) !== null)
+      times.push(parseFloat(m[1]) * 60 + parseFloat(m[2]));
+    const text = line.replace(/\[\d+:\d+(?:\.\d+)?\]/g, '').trim();
+    if (text && times.length) words.push({ line: text, start: times[0], end: times[0] + 3 });
+  }
+  for (let i = 0; i < words.length - 1; i++) words[i].end = words[i + 1].start;
+  return words;
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────
+const OUR_KEYS = new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ']);
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (OUR_KEYS.has(e.key)) e.preventDefault();
+  if (!syncedLines.length) return;
+
+  if (e.key === 'ArrowLeft' && e.ctrlKey) {
+    const base = pinnedIdx >= 0 ? pinnedIdx : activeLineIdx;
+    pinnedIdx = Math.max(0, base - 1); applyHighlight(pinnedIdx, true, true);
+  } else if (e.key === 'ArrowRight' && e.ctrlKey) {
+    const base = pinnedIdx >= 0 ? pinnedIdx : activeLineIdx;
+    pinnedIdx = Math.min(syncedLines.length - 1, base + 1); applyHighlight(pinnedIdx, true, true);
+  } else if (e.key === 'ArrowLeft') {
+    pinnedIdx = -1;
+    audioPlayer.currentTime = syncedLines[Math.max(0, activeLineIdx - 1)].start;
+    if (audioPlayer.paused) audioPlayer.play();
+  } else if (e.key === 'ArrowRight') {
+    pinnedIdx = -1;
+    audioPlayer.currentTime = syncedLines[Math.min(syncedLines.length - 1, activeLineIdx + 1)].start;
+    if (audioPlayer.paused) audioPlayer.play();
+  } else if (e.key === 'ArrowUp') {
+    audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 1);
+  } else if (e.key === 'ArrowDown') {
+    audioPlayer.currentTime = Math.min(audioPlayer.duration || Infinity, audioPlayer.currentTime + 1);
+  } else if (e.key === ' ' && e.ctrlKey) {
+    audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
+  } else if (e.key === ' ') {
+    const stampIdx = pinnedIdx >= 0 ? pinnedIdx : activeLineIdx;
+    if (stampIdx < 0 || stampIdx >= syncedLines.length) return;
+    const now = Math.round(audioPlayer.currentTime * 1000) / 1000;
+    syncedLines[stampIdx].start = now;
+    if (stampIdx > 0) syncedLines[stampIdx - 1].end = now;
+    const chip = karaokeLines.querySelector(`.kl-time[data-time-i="${stampIdx}"]`);
+    if (chip) chip.textContent = fmtTime(now);
+    pinnedIdx = -1;
+    const div = karaokeLines.querySelector(`.kl[data-i="${stampIdx}"]`);
+    if (div) {
+      div.style.outline = '2px solid var(--accent2)';
+      div.style.outlineOffset = '2px';
+      setTimeout(() => { div.style.outline = ''; div.style.outlineOffset = ''; }, 350);
+    }
+  }
+});
+
+// ── Settings ──────────────────────────────────────────────────────────────
+tokenInput.value = localStorage.getItem('jw_token') || '';
+if (tokenInput.value) tokenStatus.textContent = 'Token saved ✓';
+
+// Show/hide token
+let tokenVisible = false;
+showTokenBtn.addEventListener('click', () => {
+  tokenVisible = !tokenVisible;
+  tokenInput.type = tokenVisible ? 'text' : 'password';
+  showTokenBtn.innerHTML = tokenVisible
+    ? `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+    : `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+});
+
+// Sync model selector from backend (backend persists the choice across restarts)
+api('/api/model').then(info => {
+  if (modelSelect.querySelector(`option[value="${info.model}"]`)) modelSelect.value = info.model;
+  modelStatus.textContent = info.loaded ? ` (loaded on ${info.device.toUpperCase()})` : ' (not loaded)';
+}).catch(() => {});
+
+modelSelect.addEventListener('change', async () => {
+  const model = modelSelect.value;
+  localStorage.setItem('jw_model', model);
+  modelStatus.textContent = 'Switching…';
+  try {
+    await api('/api/model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+    modelStatus.textContent = `Changed to ${model} — loads on next sync`;
+  } catch (e) { modelStatus.textContent = 'Error: ' + (e.message ?? e); modelStatus.style.color = 'var(--danger)'; }
+});
+
+// Toggle + close on outside click
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = settingsPanel.classList.toggle('visible');
+  settingsBtn.classList.toggle('active', open);
+  if (open) tokenInput.focus();
+});
+document.addEventListener('click', (e) => {
+  if (settingsPanel.classList.contains('visible') && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+    settingsPanel.classList.remove('visible'); settingsBtn.classList.remove('active');
+  }
+});
+
+// Save token → collapse settings after short delay
+saveTokenBtn.addEventListener('click', () => {
+  const t = tokenInput.value.trim();
+  localStorage.setItem('jw_token', t);
+  tokenStatus.textContent = t ? 'Token saved ✓' : 'Cleared';
+  setTimeout(() => {
+    settingsPanel.classList.remove('visible'); settingsBtn.classList.remove('active');
+    if (!tokenStatus.textContent.includes('✓')) tokenStatus.textContent = '';
+  }, 700);
+});
+tokenInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveTokenBtn.click();
+  if (e.key === 'Escape') { settingsPanel.classList.remove('visible'); settingsBtn.classList.remove('active'); }
+});
+
+// ── Propose & copy ────────────────────────────────────────────────────────
+function maybeShowPropose() {
+  const has = syncedLines.length > 0;
+  proposeBtn.classList.toggle('visible', has);
+  copyLrcBtn.classList.toggle('visible', has);
+}
+function buildLrc() {
+  return syncedLines.map(l => {
+    const s = l.start ?? 0; const m = Math.floor(s / 60);
+    return `[${m}:${(s % 60).toFixed(2).padStart(5, '0')}] ${l.line ?? ''}`;
+  }).join('\n');
+}
+copyLrcBtn.addEventListener('click', async () => {
+  if (!syncedLines.length) return;
+  try {
+    await navigator.clipboard.writeText(buildLrc());
+    const orig = copyLrcBtn.innerHTML;
+    copyLrcBtn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
+    setTimeout(() => { copyLrcBtn.innerHTML = orig; }, 1800);
+  } catch { setSyncStatus('Clipboard copy failed.', 'error'); }
+});
+proposeBtn.addEventListener('click', async () => {
+  const token = localStorage.getItem('jw_token') || '';
+  if (!token) {
+    setSyncStatus('Set your API token first (gear icon)', 'error');
+    settingsPanel.classList.add('visible'); settingsBtn.classList.add('active'); tokenInput.focus(); return;
+  }
+  if (!currentSong || !syncedLines.length) return;
+  proposeBtn.disabled = true;
+  setSyncStatus('<span class="spinner"></span> Submitting proposal…', '');
+  try {
+    await api('/api/propose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song_id: currentSong.id, lines: syncedLines, token, plain_lyrics: plainLyricsText.value.trim() }),
+    });
+    setSyncStatus('Proposal submitted ✓', 'ok');
+  } catch (e) {
+    setSyncStatus('Proposal failed: ' + (e.message ?? e), 'error');
+  } finally { proposeBtn.disabled = false; }
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function setSyncStatus(html, cls = '') {
+  syncStatus.innerHTML = html; syncStatus.className = cls;
+}
+async function api(url, opts = {}, timeout = 30_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    if (!r.ok) { const body = await r.text(); throw new Error(`HTTP ${r.status}: ${body}`); }
+    return r.json();
+  } finally { clearTimeout(timer); }
+}
+</script>
+</body>
+</html>

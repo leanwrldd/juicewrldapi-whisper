@@ -71,6 +71,18 @@ async def ensure_audio(song_path: str):
 # ---------------------------------------------------------------------------
 # Model loading — lazy, loaded once on first /api/sync call
 # ---------------------------------------------------------------------------
+WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"]
+_MODEL_PREF_FILE = pathlib.Path(__file__).parent / ".model_pref"
+
+def _load_model_pref() -> str:
+    try:
+        name = _MODEL_PREF_FILE.read_text().strip()
+        if name in WHISPER_MODELS:
+            return name
+    except OSError:
+        pass
+    return os.getenv("WHISPER_MODEL", "small")
+
 _model = None
 _model_lock = asyncio.Lock()
 MODEL_SIZE = _load_model_pref()  # persisted in .model_pref; falls back to WHISPER_MODEL env or "small"
@@ -126,19 +138,6 @@ async def search(q: str, page_size: int = 20):
 @app.get("/api/song/{song_id}")
 async def get_song(song_id: int):
     return await jw_get(f"/songs/{song_id}/")
-
-
-WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"]
-_MODEL_PREF_FILE = pathlib.Path(__file__).parent / ".model_pref"
-
-def _load_model_pref() -> str:
-    try:
-        name = _MODEL_PREF_FILE.read_text().strip()
-        if name in WHISPER_MODELS:
-            return name
-    except OSError:
-        pass
-    return os.getenv("WHISPER_MODEL", "small")
 
 
 @app.get("/api/model")

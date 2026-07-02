@@ -16,6 +16,9 @@ venv/
 
 # Model preference (local config)
 .model_pref
+.model_pref_align
+.model_pref_verify
+.device_pref
 
 # Environment
 .env

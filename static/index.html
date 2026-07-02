@@ -24,7 +24,8 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
+    height: 100vh;       /* lock to viewport — prevents page scroll */
+    overflow: hidden;    /* all scrolling stays inside #lyricsSection */
     display: flex;
     flex-direction: column;
   }
@@ -35,12 +36,13 @@
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     background: var(--surface);
     position: sticky;
     top: 0;
     z-index: 100;
   }
+  .hdr-divider { width: 1px; height: 22px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
   .logo {
     font-size: 1.3rem;
     font-weight: 800;
@@ -88,6 +90,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    text-decoration: none;
     transition: color .15s, background .15s;
     flex-shrink: 0;
   }
@@ -189,7 +192,7 @@
   }
   #saveTokenBtn:hover { background: rgba(124,58,237,.15); }
   .token-status { font-size: .73rem; color: var(--green); }
-  #modelSelect {
+  #alignModelSelect, #verifyModelSelect {
     padding: 7px 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -199,9 +202,29 @@
     outline: none;
     cursor: pointer;
     transition: border-color .15s;
+    width: 100%;
   }
-  #modelSelect:focus { border-color: var(--accent2); }
+  #alignModelSelect:focus, #verifyModelSelect:focus { border-color: var(--accent2); }
   .model-status { font-size: .73rem; color: var(--muted); white-space: nowrap; }
+  .device-btns { display: flex; gap: 4px; }
+  .dev-btn {
+    flex: 1;
+    padding: 5px 0;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: .78rem;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .dev-btn.active {
+    background: var(--accent2);
+    border-color: var(--accent2);
+    color: #fff;
+  }
+  .tc-cancelling { opacity: .65; }
+  .tc-cancelling .tc-msg { color: var(--muted); font-style: italic; }
 
   /* ── Layout ── */
   main {
@@ -209,6 +232,7 @@
     grid-template-columns: 320px 1fr;
     flex: 1;
     min-height: 0;
+    overflow: hidden;   /* grid children must not overflow the constrained area */
     transition: grid-template-columns .25s ease;
   }
   main.sidebar-collapsed { grid-template-columns: 0 1fr; }
@@ -404,13 +428,24 @@
     border: 1px solid var(--border);
   }
 
+  /* ── Lyrics + controls wrapper — the containing block for the floating bar ── */
+  .lyrics-controls-area {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* no overflow:hidden — that clips the absolutely-positioned controls bar */
+  }
+
   /* ── Lyrics section (scrollable) ── */
   #lyricsSection {
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    min-height: 0; /* critical: allows flex child to shrink so controls stay visible */
+    min-height: 0;
+    padding-bottom: 120px; /* so last lyric scrolls above the floating controls */
   }
 
   /* Auto-follow resume bar — lives OUTSIDE lyricsSection so it doesn't scroll away */
@@ -652,9 +687,12 @@
   #plainLyricsText:focus { border-color: var(--accent2); }
   #plainLyricsText::placeholder { color: var(--muted); font-style: italic; }
 
-  /* ── Controls bar — pinned at bottom (hovering feel) ── */
+  /* ── Controls bar — floats over lyrics inside .lyrics-controls-area ── */
   .controls {
-    flex-shrink: 0;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
     padding: 13px 20px;
     background: rgba(13,13,20,.97);
     backdrop-filter: blur(16px);
@@ -671,7 +709,42 @@
     gap: 8px;
     margin-top: 10px;
     flex-wrap: wrap;
+    row-gap: 8px;
   }
+  .btn-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .btn-divider { width: 1px; height: 22px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+
+  /* Shared control-button base — replaces the old one-off per-button styles */
+  .ctrl-btn {
+    display: flex; align-items: center; gap: 6px;
+    height: 34px;
+    padding: 0 13px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s, border-color .15s, opacity .15s, transform .1s, color .15s;
+  }
+  .ctrl-btn:active { transform: scale(.97); }
+  .ctrl-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+  .ctrl-btn-primary { background: var(--accent); color: #fff; }
+  .ctrl-btn-primary:hover:not(:disabled) { background: var(--accent2); }
+
+  .ctrl-btn-auto { background: linear-gradient(135deg, #6d28d9, #4338ca); color: #fff; }
+  .ctrl-btn-auto:hover:not(:disabled) { opacity: .85; }
+
+  .ctrl-btn-outline { border-color: var(--border); background: none; color: var(--muted); }
+  .ctrl-btn-outline:hover:not(:disabled) { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+
+  .ctrl-btn-ghost { border-color: var(--border); background: none; color: var(--muted); height: 30px; padding: 0 10px; font-size: .78rem; }
+  .ctrl-btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+
+  .ctrl-btn-accent-outline { border-color: var(--accent); color: var(--accent2); background: none; height: 30px; padding: 0 12px; font-size: .78rem; }
+  .ctrl-btn-accent-outline:hover:not(:disabled) { background: rgba(124,58,237,.15); }
+  .ctrl-btn-accent-outline:disabled { opacity: .4; }
   #syncProgress {
     display: none;
     flex-direction: column;
@@ -707,45 +780,6 @@
     100% { transform: translateX(350%); }
   }
 
-  /* Sync btn */
-  #syncBtn {
-    display: flex; align-items: center; gap: 7px;
-    padding: 8px 16px;
-    border-radius: 8px; border: none;
-    background: var(--accent); color: #fff;
-    font-size: .85rem; font-weight: 600; cursor: pointer;
-    transition: background .2s, transform .1s;
-  }
-  #syncBtn:hover { background: var(--accent2); }
-  #syncBtn:active { transform: scale(.97); }
-  #syncBtn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
-
-  /* Auto-whisper btn */
-  #autoWhisperBtn {
-    display: flex; align-items: center; gap: 6px;
-    padding: 8px 14px;
-    border-radius: 8px; border: none;
-    background: linear-gradient(135deg, #6d28d9, #4338ca);
-    color: #fff;
-    font-size: .85rem; font-weight: 600; cursor: pointer;
-    transition: opacity .2s, transform .1s;
-  }
-  #autoWhisperBtn:hover { opacity: .85; }
-  #autoWhisperBtn:active { transform: scale(.97); }
-  #autoWhisperBtn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-
-  /* Paste LRC btn */
-  #pasteLrcBtn {
-    display: flex; align-items: center; gap: 6px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: none; color: var(--muted);
-    font-size: .85rem; font-weight: 600; cursor: pointer;
-    transition: color .15s, border-color .15s, background .15s;
-  }
-  #pasteLrcBtn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
-
   #lrcPasteArea {
     display: none; flex-direction: column; gap: 7px; margin-top: 7px;
   }
@@ -761,23 +795,14 @@
   }
   #lrcTextarea::placeholder { color: var(--muted); font-style: italic; }
 
-  /* Propose / Copy */
-  #proposeBtn, #copyLrcBtn {
-    display: none; align-items: center; gap: 6px;
-    padding: 8px 14px;
-    border-radius: 8px; border: 1px solid var(--accent);
-    background: none; color: var(--accent2);
-    font-size: .85rem; font-weight: 600; cursor: pointer;
-    transition: background .15s;
-  }
+  /* Propose / Copy — visibility toggle only, styling comes from .ctrl-btn-accent-outline */
+  #proposeBtn, #copyLrcBtn { display: none; }
   #proposeBtn.visible, #copyLrcBtn.visible { display: flex; }
-  #proposeBtn:hover, #copyLrcBtn:hover { background: rgba(124,58,237,.15); }
-  #proposeBtn:disabled, #copyLrcBtn:disabled { opacity: .4; cursor: not-allowed; }
 
   #syncStatus {
     font-size: .78rem;
     color: var(--muted);
-    flex: 1;
+    flex-basis: 100%;
     min-width: 0;
   }
   #syncStatus.error { color: var(--danger); }
@@ -1078,6 +1103,20 @@
     </div>
   </div>
 
+  <div class="hdr-divider"></div>
+
+  <!-- Hidden file input for local audio -->
+  <input type="file" id="localFileInput" accept="audio/*" style="display:none">
+  <button id="localFileBtn" class="hbtn" title="Load local audio file">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+      <polyline points="13 2 13 9 20 9"/>
+      <line x1="12" y1="13" x2="12" y2="19"/><line x1="9" y1="16" x2="15" y2="16"/>
+    </svg>
+  </button>
+
+  <div class="hdr-divider"></div>
+
   <button id="queueBtn" class="hbtn" title="Task queue">
     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
@@ -1092,6 +1131,14 @@
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
     </svg>
   </button>
+
+  <a id="dbManagerBtn" class="hbtn" title="Database manager" href="/db-manager.html">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <ellipse cx="12" cy="5" rx="9" ry="3"/>
+      <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+      <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+    </svg>
+  </a>
 </header>
 
 <!-- ── Queue panel ── -->
@@ -1121,8 +1168,8 @@
     <span id="tokenStatus" class="token-status"></span>
   </div>
   <div class="sg">
-    <label for="modelSelect">Whisper Model</label>
-    <select id="modelSelect">
+    <label for="alignModelSelect">Sync model</label>
+    <select id="alignModelSelect">
       <option value="tiny">tiny — fastest</option>
       <option value="base">base — fast</option>
       <option value="small" selected>small — balanced</option>
@@ -1131,6 +1178,26 @@
       <option value="large-v2">large-v2 — best</option>
       <option value="large-v3">large-v3 — best</option>
     </select>
+  </div>
+  <div class="sg">
+    <label for="verifyModelSelect">Verify model</label>
+    <select id="verifyModelSelect">
+      <option value="tiny">tiny — fastest</option>
+      <option value="base" selected>base — fast</option>
+      <option value="small">small — balanced</option>
+      <option value="medium">medium — better</option>
+      <option value="large">large — great</option>
+      <option value="large-v2">large-v2 — best</option>
+      <option value="large-v3">large-v3 — best</option>
+    </select>
+  </div>
+  <div class="sg">
+    <label>Device</label>
+    <div class="device-btns">
+      <button class="dev-btn active" data-dev="auto">Auto</button>
+      <button class="dev-btn" data-dev="cpu">CPU</button>
+      <button class="dev-btn" data-dev="cuda">GPU</button>
+    </div>
     <span id="modelStatus" class="model-status"></span>
   </div>
 </div>
@@ -1188,131 +1255,153 @@
         Resume auto-scroll
       </button>
 
-      <!-- Lyrics (scrollable) -->
-      <div id="lyricsSection">
-        <div class="lyrics-tabs">
-          <button class="tab-btn active" data-tab="karaoke">Synced</button>
-          <button class="tab-btn" data-tab="plain">Lyrics</button>
-          <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;Ctrl+Space play</span>
-        </div>
+      <!-- Lyrics + controls share this wrapper so controls can float over lyrics -->
+      <div class="lyrics-controls-area">
 
-        <div class="lyrics-body">
-          <div id="karaokeView">
-            <div class="karaoke-lines" id="karaokeLines">
-              <span style="color:var(--muted);font-size:.88rem">
-                Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.
-              </span>
-            </div>
+        <!-- Lyrics (scrollable) -->
+        <div id="lyricsSection">
+          <div class="lyrics-tabs">
+            <button class="tab-btn active" data-tab="karaoke">Synced</button>
+            <button class="tab-btn" data-tab="plain">Lyrics</button>
+            <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;Ctrl+Space play</span>
           </div>
 
-          <div id="plainLyricsView">
-            <div class="lyrics-edit-bar">
-              <span id="lyricsSrcTag" class="lyrics-src-tag">API</span>
-              <button id="resetLyricsBtn" class="lyr-btn" style="display:none">
-                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
-                </svg>
-                Reset
-              </button>
-              <button id="geniusBtn" class="lyr-btn">
-                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                Search Genius
-              </button>
-              <button id="verifyBtn" class="lyr-btn">
-                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                </svg>
-                Verify
-              </button>
-              <button id="geniusUrlBtn" class="lyr-btn">
-                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                </svg>
-                Paste URL
-              </button>
-              <input id="geniusUrlInput" type="url" placeholder="https://genius.com/… (Enter to fetch)" />
-            </div>
-
-            <div id="verifyPanel">
-              <div class="verify-summary">
-                <span class="v-count v-present" id="vCountPresent">✓ 0 confirmed</span>
-                <span class="v-count v-uncertain" id="vCountUncertain">? 0 uncertain</span>
-                <span class="v-count v-absent" id="vCountAbsent">✗ 0 absent</span>
+          <div class="lyrics-body">
+            <div id="karaokeView">
+              <div class="karaoke-lines" id="karaokeLines">
+                <span style="color:var(--muted);font-size:.88rem">
+                  Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.
+                </span>
               </div>
-              <div class="verify-actions">
-                <button class="vbtn danger" id="removeAbsentBtn">Remove absent</button>
-                <button class="vbtn" id="removeUncertainBtn">Remove absent + uncertain</button>
-                <button class="vbtn" id="applyManualBtn">Keep selected</button>
-                <button class="vbtn" id="dismissVerifyBtn">Dismiss</button>
-              </div>
-              <div class="verify-absent-lines" id="verifyAbsentLines"></div>
             </div>
 
-            <!-- Colored verify lines — shown after Verify, hides textarea -->
-            <div id="verifyLinesView"></div>
+            <div id="plainLyricsView">
+              <div class="lyrics-edit-bar">
+                <span id="lyricsSrcTag" class="lyrics-src-tag">API</span>
+                <button id="resetLyricsBtn" class="lyr-btn" style="display:none">
+                  <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                  </svg>
+                  Reset
+                </button>
+                <button id="geniusBtn" class="lyr-btn">
+                  <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  Search Genius
+                </button>
+                <button id="verifyBtn" class="lyr-btn">
+                  <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                  </svg>
+                  Verify
+                </button>
+                <button id="geniusUrlBtn" class="lyr-btn">
+                  <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                  </svg>
+                  Paste URL
+                </button>
+                <input id="geniusUrlInput" type="url" placeholder="https://genius.com/… (Enter to fetch)" />
+              </div>
 
-            <textarea id="plainLyricsText" spellcheck="false" placeholder="No lyrics — paste here or search Genius above…"></textarea>
-          </div>
-        </div>
-      </div>
+              <div id="verifyPanel">
+                <div class="verify-summary">
+                  <span class="v-count v-present" id="vCountPresent">✓ 0 confirmed</span>
+                  <span class="v-count v-uncertain" id="vCountUncertain">? 0 uncertain</span>
+                  <span class="v-count v-absent" id="vCountAbsent">✗ 0 absent</span>
+                </div>
+                <div class="verify-actions">
+                  <button class="vbtn danger" id="removeAbsentBtn">Remove absent</button>
+                  <button class="vbtn" id="removeUncertainBtn">Remove absent + uncertain</button>
+                  <button class="vbtn" id="applyManualBtn">Keep selected</button>
+                  <button class="vbtn" id="dismissVerifyBtn">Dismiss</button>
+                </div>
+                <div class="verify-absent-lines" id="verifyAbsentLines"></div>
+              </div>
 
-      <!-- Controls bar (floating at bottom) -->
-      <div class="controls">
-        <audio id="audioPlayer" controls></audio>
-        <div class="sync-row">
-          <button id="syncBtn">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
-            Sync
-          </button>
-          <button id="autoWhisperBtn" title="Auto: fetch lyrics → verify → sync automatically">
-            ⚡ Auto
-          </button>
-          <button id="pasteLrcBtn">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-              <rect x="8" y="2" width="8" height="4" rx="1"/>
-            </svg>
-            LRC
-          </button>
-          <button id="copyLrcBtn">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-            Copy LRC
-          </button>
-          <button id="proposeBtn">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-            Propose
-          </button>
-          <span id="syncStatus"></span>
-        </div>
-        <div id="lrcPasteArea">
-          <textarea id="lrcTextarea" placeholder="[0:00.00] Line one&#10;[0:04.20] Line two&#10;…"></textarea>
-        </div>
-        <div id="syncProgress">
-          <div class="prog-label">
-            <span id="progMsg">—</span>
-            <span id="progPct"></span>
+              <!-- Colored verify lines — shown after Verify, hides textarea -->
+              <div id="verifyLinesView"></div>
+
+              <textarea id="plainLyricsText" spellcheck="false" placeholder="No lyrics — paste here or search Genius above…"></textarea>
+            </div>
           </div>
-          <div class="prog-rich" id="progRich">
-            <span id="progDone"></span>
-            <span id="progEta"></span>
-            <span id="progSpeed"></span>
+        </div><!-- /lyricsSection -->
+
+        <!-- Controls bar — position:absolute so it floats over lyrics -->
+        <div class="controls">
+          <audio id="audioPlayer" controls></audio>
+          <div class="sync-row">
+            <div class="btn-group">
+              <button id="syncBtn" class="ctrl-btn ctrl-btn-primary" title="Sync using the lyrics text below">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                Sync
+              </button>
+              <button id="autoWhisperBtn" class="ctrl-btn ctrl-btn-auto" title="Auto: fetch lyrics → verify → sync automatically">
+                ⚡ Auto
+              </button>
+              <button id="transcribeBtn" class="ctrl-btn ctrl-btn-outline" title="Transcribe audio with Whisper — no lyrics needed">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+                Transcribe
+              </button>
+            </div>
+
+            <div class="btn-divider"></div>
+
+            <div class="btn-group">
+              <button id="pasteLrcBtn" class="ctrl-btn ctrl-btn-ghost" title="Paste an existing LRC file">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                  <rect x="8" y="2" width="8" height="4" rx="1"/>
+                </svg>
+                LRC
+              </button>
+              <button id="copyLrcBtn" class="ctrl-btn ctrl-btn-accent-outline" title="Copy synced lyrics as LRC">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy LRC
+              </button>
+              <button id="proposeBtn" class="ctrl-btn ctrl-btn-accent-outline" title="Submit this sync as a proposed edit">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                Propose
+              </button>
+            </div>
+
+            <span id="syncStatus"></span>
           </div>
-          <div class="prog-track">
-            <div class="prog-fill" id="progFill"></div>
+          <div id="lrcPasteArea">
+            <textarea id="lrcTextarea" placeholder="[0:00.00] Line one&#10;[0:04.20] Line two&#10;…"></textarea>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
+          <div id="syncProgress">
+            <div class="prog-label">
+              <span id="progMsg">—</span>
+              <span id="progPct"></span>
+            </div>
+            <div class="prog-rich" id="progRich">
+              <span id="progDone"></span>
+              <span id="progEta"></span>
+              <span id="progSpeed"></span>
+            </div>
+            <div class="prog-track">
+              <div class="prog-fill" id="progFill"></div>
+            </div>
+          </div>
+        </div><!-- /controls -->
+
+      </div><!-- /lyrics-controls-area -->
+
+    </div><!-- /nowPlaying -->
+  </div><!-- /playerPanel -->
 </main>
 
 <script>
@@ -1325,7 +1414,8 @@ let activeTab      = 'karaoke';
 let customLyrics   = '';
 let lastVerifyResults = [];
 let autoFollow     = true;
-let progScroll     = false; // true while scrollIntoView is running
+let _userScrolling = false; // set true on wheel/touch/pointer before scroll fires
+let localFilePath  = '';    // server-side path of uploaded local file (empty = API mode)
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const searchInput      = document.getElementById('searchInput');
@@ -1342,6 +1432,7 @@ const npLength         = document.getElementById('npLength');
 const audioPlayer      = document.getElementById('audioPlayer');
 const syncBtn          = document.getElementById('syncBtn');
 const autoWhisperBtn   = document.getElementById('autoWhisperBtn');
+const transcribeBtn    = document.getElementById('transcribeBtn');
 const syncStatus       = document.getElementById('syncStatus');
 const syncProgress     = document.getElementById('syncProgress');
 const progMsg          = document.getElementById('progMsg');
@@ -1387,14 +1478,18 @@ const saveTokenBtn     = document.getElementById('saveTokenBtn');
 const tokenStatus      = document.getElementById('tokenStatus');
 const proposeBtn       = document.getElementById('proposeBtn');
 const copyLrcBtn       = document.getElementById('copyLrcBtn');
-const modelSelect      = document.getElementById('modelSelect');
-const modelStatus      = document.getElementById('modelStatus');
+const alignModelSelect  = document.getElementById('alignModelSelect');
+const verifyModelSelect = document.getElementById('verifyModelSelect');
+const deviceBtns        = document.querySelectorAll('.dev-btn');
+const modelStatus       = document.getElementById('modelStatus');
 const collapseSidebarBtn = document.getElementById('collapseSidebarBtn');
 const expandSidebarBtn   = document.getElementById('expandSidebarBtn');
 const mainEl             = document.querySelector('main');
 const queueBtn           = document.getElementById('queueBtn');
 const queueBadge         = document.getElementById('queueBadge');
 const queuePanel         = document.getElementById('queuePanel');
+const localFileBtn       = document.getElementById('localFileBtn');
+const localFileInput     = document.getElementById('localFileInput');
 const queueContent       = document.getElementById('queueContent');
 const closeQueueBtn      = document.getElementById('closeQueueBtn');
 const clearDoneBtn       = document.getElementById('clearDoneBtn');
@@ -1411,8 +1506,17 @@ expandSidebarBtn.addEventListener('click', () => {
 });
 
 // ── Auto-follow (pause on manual scroll) ─────────────────────────────────
+// Programmatic scrollIntoView doesn't emit wheel/touchstart/pointerdown,
+// so we use those events to flag a genuine user scroll before checking 'scroll'.
+// wheel covers mouse + trackpad; touchstart covers mobile.
+// pointerdown intentionally excluded — it fires on lyric-line clicks too,
+// which would incorrectly disable auto-follow when the user seeks by clicking.
+['wheel', 'touchstart'].forEach(ev =>
+  lyricsSection.addEventListener(ev, () => { _userScrolling = true; }, { passive: true })
+);
 lyricsSection.addEventListener('scroll', () => {
-  if (progScroll) return;
+  if (!_userScrolling) return;
+  _userScrolling = false;
   if (autoFollow) {
     autoFollow = false;
     resumeFollowBtn.classList.add('visible');
@@ -1515,9 +1619,10 @@ async function loadSong(id) {
 }
 
 async function loadSongData(song) {
+  localFilePath = '';  // clear any previous local file override
   syncedLines = []; activeLineIdx = -1; customLyrics = '';
   setSyncStatus('');
-  syncBtn.disabled = false; autoWhisperBtn.disabled = false;
+  syncBtn.disabled = false; autoWhisperBtn.disabled = false; transcribeBtn.disabled = false;
   setKaraokeDefault();
   autoFollow = true; resumeFollowBtn.classList.remove('visible');
   proposeBtn.classList.remove('visible'); copyLrcBtn.classList.remove('visible');
@@ -1540,7 +1645,7 @@ async function loadSongData(song) {
       audioPlayer.load();
     } else {
       audioPlayer.src = '';
-      syncBtn.disabled = true; autoWhisperBtn.disabled = true;
+      syncBtn.disabled = true; autoWhisperBtn.disabled = true; transcribeBtn.disabled = true;
       setSyncStatus('No audio file for this song.', 'error');
     }
 
@@ -1631,6 +1736,7 @@ function handleSyncEvent(ev) {
 
 // ── Auto-whisper pipeline ─────────────────────────────────────────────────
 autoWhisperBtn.addEventListener('click', () => enqueueTask('auto'));
+transcribeBtn.addEventListener('click', () => enqueueTask('transcribe'));
 
 async function autoWhisper() {
   if (!currentSong) return;
@@ -1780,9 +1886,7 @@ function applyHighlight(idx, scroll = true, instant = false) {
     d.className = 'kl ' + (i < idx ? 'past' : i === idx ? 'current' : 'future');
   });
   if (scroll && idx >= 0 && divs[idx] && autoFollow) {
-    progScroll = true;
     divs[idx].scrollIntoView({ block: 'center', behavior: instant ? 'instant' : 'smooth' });
-    setTimeout(() => { progScroll = false; }, 700);
   }
 }
 
@@ -1990,7 +2094,7 @@ dismissVerifyBtn.addEventListener('click', () => {
 
 // ── Lyrics editing ────────────────────────────────────────────────────────
 function updateLyricsSrc(src, hasContent) {
-  const labels = { api: 'API', genius: 'Genius', manual: 'Manual', edited: 'Edited' };
+  const labels = { api: 'API', genius: 'Genius', manual: 'Manual', edited: 'Edited', whisper: 'Whisper' };
   lyricsSrcTag.textContent = hasContent ? labels[src] || src : 'No lyrics';
   lyricsSrcTag.classList.toggle('edited', src !== 'api');
   resetLyricsBtn.style.display = (src !== 'api' && currentSong?.lyrics) ? '' : 'none';
@@ -2173,10 +2277,9 @@ document.addEventListener('click', (e) => {
     queueBtn.classList.remove('active');
   }
 });
-clearDoneBtn.addEventListener('click', () => {
-  // Visually clear history; server prunes automatically, but update local render
-  _queueState.history = [];
-  renderQueue(_queueState);
+clearDoneBtn.addEventListener('click', async () => {
+  await api('/api/queue/history', { method: 'DELETE' }).catch(() => {});
+  // Server broadcasts updated state via SSE — no local patch needed
 });
 
 // EventSource
@@ -2191,16 +2294,24 @@ _qEvt.onmessage = (e) => {
 };
 _qEvt.onerror = () => {};   // reconnects automatically
 
-// Enqueue a task for the current song
+// Enqueue a task for the current song (or a local file)
 async function enqueueTask(type) {
-  if (!currentSong) return;
-  const songName = currentSong.track_titles?.[0] ?? currentSong.name ?? '';
-  const lyrics   = plainLyricsText.value.trim();
+  if (!currentSong && !localFilePath) return;
+  const songName = currentSong
+    ? (currentSong.track_titles?.[0] ?? currentSong.name ?? '')
+    : npTitle.textContent;
+  const lyrics = plainLyricsText.value.trim();
   try {
     await api('/api/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, song_id: currentSong.id, song_name: songName, lyrics }),
+      body: JSON.stringify({
+        type,
+        song_id:    currentSong?.id ?? 0,
+        song_name:  songName,
+        lyrics,
+        local_path: localFilePath,   // empty string when using API song
+      }),
     });
     // Auto-open queue panel
     queuePanel.classList.add('visible');
@@ -2226,14 +2337,15 @@ function tcTypeBadge(type) {
 }
 
 function renderTask(task, isActive) {
-  const canCancel = task.status === 'pending' || task.status === 'running';
+  const canCancel = task.status === 'pending' || task.status === 'running' || task.status === 'cancelling';
   const pct       = task.progress?.pct ?? 0;
   const msg       = task.progress?.msg ?? (task.status === 'pending' ? 'Waiting in queue…' : '');
   const prog      = task.progress?.progress ?? null;
   const indeterminate = task.progress?.stage === 'loading';
+  const isCancelling  = task.status === 'cancelling';
 
   let bodyHtml = '';
-  if (isActive) {
+  if (isActive || isCancelling) {
     const richHtml = prog
       ? `<div class="tc-rich">
            <span>${prog.done.toFixed(1)}/${prog.total.toFixed(1)}s</span>
@@ -2258,7 +2370,7 @@ function renderTask(task, isActive) {
     bodyHtml = `<div class="tc-msg">${esc(msg)}</div>`;
   }
 
-  return `<div class="tc tc-${task.status}" data-task-id="${task.id}">
+  return `<div class="tc tc-${task.status}${isCancelling ? ' tc-cancelling' : ''}" data-task-id="${task.id}">
     <div class="tc-row1">
       ${tcTypeBadge(task.type)}
       <span class="tc-name" title="${esc(task.song_name)}">${esc(task.song_name)}</span>
@@ -2312,7 +2424,8 @@ function applyCompletedTasks(state) {
 
   for (const task of candidates) {
     if (_appliedTaskIds.has(task.id)) continue;
-    if (task.song_id !== currentSong?.id) continue;
+    // local-file tasks have song_id=0; API tasks must match the current song
+    if (task.song_id !== 0 && task.song_id !== currentSong?.id) continue;
 
     // Sync / auto (with lines)
     if (task.status === 'done' && task.result?.lines?.length) {
@@ -2322,6 +2435,20 @@ function applyCompletedTasks(state) {
       setTab('karaoke');
       setSyncStatus(`Queue ✓ — ${syncedLines.length} lines synced`, 'ok');
       maybeShowPropose();
+    }
+
+    // Transcribe — fill lyrics textarea with plain text + apply as synced lines
+    if (task.type === 'transcribe' && task.status === 'done' && task.result?.text) {
+      _appliedTaskIds.add(task.id);
+      plainLyricsText.value = task.result.text;
+      customLyrics = task.result.text;
+      updateLyricsSrc('whisper', true);
+      if (task.result.lines?.length) {
+        syncedLines = task.result.lines;
+        renderKaraoke(syncedLines);
+      }
+      setTab('plain');
+      setSyncStatus(`Transcribed ${task.result.lines?.length ?? 0} lines — review in Lyrics tab, then Sync to align.`, 'ok');
     }
 
     // Verify (verify results only, no lines)
@@ -2358,21 +2485,53 @@ showTokenBtn.addEventListener('click', () => {
     : `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 });
 
-// Sync model selector from backend (backend persists the choice across restarts)
+// ── Model / device settings ──────────────────────────────────────────────
+let _currentDevicePref = 'auto';
+
+function _setDeviceBtn(pref) {
+  _currentDevicePref = pref;
+  deviceBtns.forEach(b => b.classList.toggle('active', b.dataset.dev === pref));
+}
+
+async function _saveModelSettings(patch) {
+  modelStatus.textContent = 'Saving…';
+  try {
+    const info = await api('/api/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const dev = info.device_pref === 'auto'
+      ? `Auto (${info.device?.toUpperCase()})`
+      : info.device_pref.toUpperCase();
+    modelStatus.textContent = `Saved — device: ${dev}`;
+    setTimeout(() => { modelStatus.textContent = ''; }, 3000);
+  } catch (e) {
+    modelStatus.textContent = 'Error: ' + (e.message ?? e);
+    modelStatus.style.color = 'var(--danger)';
+  }
+}
+
+// Init from backend
 api('/api/model').then(info => {
-  if (modelSelect.querySelector(`option[value="${info.model}"]`)) modelSelect.value = info.model;
-  modelStatus.textContent = info.loaded ? ` (loaded on ${info.device.toUpperCase()})` : ' (not loaded)';
+  if (alignModelSelect.querySelector(`option[value="${info.align_model}"]`))
+    alignModelSelect.value = info.align_model;
+  if (verifyModelSelect.querySelector(`option[value="${info.verify_model}"]`))
+    verifyModelSelect.value = info.verify_model;
+  _setDeviceBtn(info.device_pref ?? 'auto');
+  const loadedOn = info.device?.toUpperCase() ?? '';
+  if (info.align_loaded || info.verify_loaded)
+    modelStatus.textContent = `Loaded on ${loadedOn}`;
 }).catch(() => {});
 
-modelSelect.addEventListener('change', async () => {
-  const model = modelSelect.value;
-  localStorage.setItem('jw_model', model);
-  modelStatus.textContent = 'Switching…';
-  try {
-    await api('/api/model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
-    modelStatus.textContent = `Changed to ${model} — loads on next sync`;
-  } catch (e) { modelStatus.textContent = 'Error: ' + (e.message ?? e); modelStatus.style.color = 'var(--danger)'; }
-});
+alignModelSelect.addEventListener('change', () =>
+  _saveModelSettings({ align_model: alignModelSelect.value }));
+verifyModelSelect.addEventListener('change', () =>
+  _saveModelSettings({ verify_model: verifyModelSelect.value }));
+deviceBtns.forEach(btn => btn.addEventListener('click', () => {
+  _setDeviceBtn(btn.dataset.dev);
+  _saveModelSettings({ device_pref: btn.dataset.dev });
+}));
 
 // Toggle + close on outside click
 settingsBtn.addEventListener('click', (e) => {
@@ -2384,6 +2543,52 @@ settingsBtn.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (settingsPanel.classList.contains('visible') && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
     settingsPanel.classList.remove('visible'); settingsBtn.classList.remove('active');
+  }
+});
+
+// ── Local file loading ────────────────────────────────────────────────────
+localFileBtn.addEventListener('click', () => localFileInput.click());
+
+localFileInput.addEventListener('change', async () => {
+  const file = localFileInput.files[0];
+  if (!file) return;
+  localFileInput.value = ''; // reset so same file can be re-picked
+
+  // Immediate playback via blob URL
+  if (audioPlayer.src.startsWith('blob:')) URL.revokeObjectURL(audioPlayer.src);
+  audioPlayer.src = URL.createObjectURL(file);
+  audioPlayer.load();
+
+  // Show player if not already visible
+  const title = file.name.replace(/\.[^.]+$/, '');
+  if (!currentSong) {
+    npTitle.textContent  = title;
+    npArtist.textContent = 'Local file';
+    npCategory.textContent = npEra.textContent = npLength.textContent = '';
+    npArt.src = ''; npArt.style.display = 'none';
+    syncedLines = []; activeLineIdx = -1; customLyrics = '';
+    setSyncStatus(''); setKaraokeDefault();
+    autoFollow = true; resumeFollowBtn.classList.remove('visible');
+    proposeBtn.classList.remove('visible'); copyLrcBtn.classList.remove('visible');
+    verifyPanel.classList.remove('visible');
+    emptyState.style.display = 'none';
+    nowPlaying.classList.add('visible');
+    setTab('karaoke');
+  }
+  syncBtn.disabled = false; autoWhisperBtn.disabled = false; transcribeBtn.disabled = false;
+
+  // Upload to server so Whisper can access the file
+  setSyncStatus('Uploading file…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const { path, name } = await r.json();
+    localFilePath = path;
+    setSyncStatus(`Loaded: ${name}`, 'ok');
+  } catch (e) {
+    setSyncStatus('Upload failed — sync/verify won\'t work, but playback is fine.', 'error');
   }
 });
 

@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import sys
 import tempfile
 import threading
@@ -12,10 +13,31 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field as dc_field
 
+# ---------------------------------------------------------------------------
+# Windows: shut down cleanly when the console window is closed
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
+
+    _CTRL_CLOSE_EVENT = 2
+
+    @ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.DWORD)
+    def _win_ctrl_handler(ctrl_type):
+        if ctrl_type == _CTRL_CLOSE_EVENT:
+            # Send SIGINT to ourselves — uvicorn catches it and shuts down gracefully
+            os.kill(os.getpid(), signal.SIGINT)
+            # Block briefly so uvicorn has time to start shutdown before Windows
+            # forcibly terminates the process (~5 s window)
+            threading.Event().wait(4)
+        return False  # pass event to next handler
+
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(_win_ctrl_handler, True)
+
 import httpx
 import stable_whisper
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -37,6 +59,7 @@ class _ProgressSpy:
     def __init__(self):
         self._lock = threading.Lock()
         self._latest: dict | None = None
+        self.silent = False   # set True to stop forwarding tqdm to terminal
 
     def write(self, s: str) -> int:
         for chunk in re.split(r'[\r\n]', s):
@@ -74,10 +97,11 @@ class _TeeStderr:
 
     def write(self, s: str) -> int:
         self._spy.write(s)
-        try:
-            self._orig.write(s)
-        except Exception:
-            pass
+        if not self._spy.silent:
+            try:
+                self._orig.write(s)
+            except Exception:
+                pass
         return len(s)
 
     def flush(self):
@@ -89,6 +113,12 @@ class _TeeStderr:
     def isatty(self) -> bool: return False
     def fileno(self): raise io.UnsupportedOperation("fileno")
 
+
+# ---------------------------------------------------------------------------
+# Upload directory — local files submitted for whisper processing
+# ---------------------------------------------------------------------------
+UPLOAD_DIR = pathlib.Path(tempfile.gettempdir()) / "jw_uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Audio cache — last downloaded file, reused by /api/sync and /api/verify
@@ -143,39 +173,84 @@ async def ensure_audio(song_path: str):
 
 
 # ---------------------------------------------------------------------------
-# Model loading — lazy, loaded once on first /api/sync call
+# Model loading — separate align (sync) and verify models, lazy-loaded
 # ---------------------------------------------------------------------------
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"]
-_MODEL_PREF_FILE = pathlib.Path(__file__).parent / ".model_pref"
+_PREF_DIR = pathlib.Path(__file__).parent
 
-def _load_model_pref() -> str:
+def _read_pref(filename: str, choices: list, default: str) -> str:
     try:
-        name = _MODEL_PREF_FILE.read_text().strip()
-        if name in WHISPER_MODELS:
-            return name
+        val = (_PREF_DIR / filename).read_text().strip()
+        if val in choices:
+            return val
     except OSError:
         pass
-    return os.getenv("WHISPER_MODEL", "small")
+    return default
 
-_model = None
-_model_lock = asyncio.Lock()
-MODEL_SIZE = _load_model_pref()  # persisted in .model_pref; falls back to WHISPER_MODEL env or "small"
+def _write_pref(filename: str, value: str) -> None:
+    try:
+        (_PREF_DIR / filename).write_text(value)
+    except OSError:
+        pass
+
+# Device preference: "auto" | "cpu" | "cuda"
+DEVICE_PREF: str = _read_pref(".device_pref", ["auto", "cpu", "cuda"], "auto")
+
+def _get_device() -> str:
+    if DEVICE_PREF == "cpu":
+        return "cpu"
+    import torch
+    avail = "cuda" if torch.cuda.is_available() else "cpu"
+    if DEVICE_PREF == "cuda" and avail != "cuda":
+        print("[whisper] CUDA requested but not available — falling back to CPU.")
+        return "cpu"
+    return avail
+
+# Align model (used for sync / alignment tasks)
+ALIGN_MODEL_SIZE: str = _read_pref(".model_pref_align", WHISPER_MODELS,
+                                    _read_pref(".model_pref", WHISPER_MODELS,
+                                               os.getenv("WHISPER_MODEL", "small")))
+_align_model = None
+
+# Verify model (used for free-transcription / verify tasks)
+VERIFY_MODEL_SIZE: str = _read_pref(".model_pref_verify", WHISPER_MODELS, "base")
+_verify_model = None
+
+_model_lock     = asyncio.Lock()   # serialises model loads (one at a time)
+_inference_lock = asyncio.Lock()   # one whisper inference at a time (model is not thread-safe for concurrent calls)
 
 
-async def get_model():
-    global _model
-    if _model is None:
+async def get_align_model():
+    global _align_model
+    if _align_model is None:
         async with _model_lock:
-            if _model is None:
-                import torch
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                print(f"[whisper] Loading '{MODEL_SIZE}' model on {device.upper()} …")
-                loop = asyncio.get_event_loop()
-                _model = await loop.run_in_executor(
-                    None, lambda: stable_whisper.load_model(MODEL_SIZE, device=device)
-                )
-                print(f"[whisper] Model ready on {device.upper()}.")
-    return _model
+            if _align_model is None:
+                device = _get_device()
+                print(f"[whisper] Loading align model '{ALIGN_MODEL_SIZE}' on {device.upper()} …")
+                loop = asyncio.get_running_loop()
+                _align_model = await loop.run_in_executor(
+                    None, lambda: stable_whisper.load_model(ALIGN_MODEL_SIZE, device=device))
+                print(f"[whisper] Align model ready.")
+    return _align_model
+
+
+async def get_verify_model():
+    global _verify_model
+    if _verify_model is None:
+        async with _model_lock:
+            if _verify_model is None:
+                device = _get_device()
+                print(f"[whisper] Loading verify model '{VERIFY_MODEL_SIZE}' on {device.upper()} …")
+                loop = asyncio.get_running_loop()
+                _verify_model = await loop.run_in_executor(
+                    None, lambda: stable_whisper.load_model(VERIFY_MODEL_SIZE, device=device))
+                print(f"[whisper] Verify model ready.")
+    return _verify_model
+
+
+# Backward-compat alias used by legacy SSE endpoints
+async def get_model():
+    return await get_align_model()
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +264,7 @@ class QueueTask:
     song_id: int
     song_name: str
     lyrics: str         # may be empty
+    local_path: str = ""  # non-empty → use this file instead of fetching from API
     status: str = "pending"   # pending|running|done|error|cancelled
     progress: dict = dc_field(default_factory=dict)
     error: str = ""
@@ -215,38 +291,32 @@ class QueueTask:
 _task_queue: asyncio.Queue = asyncio.Queue()
 _tasks: dict[str, QueueTask] = {}          # id → task (all states)
 _active_task: QueueTask | None = None
-_q_subscribers: list[asyncio.Queue] = []
-_inference_lock = asyncio.Lock()           # one whisper inference at a time
+
+# SSE broadcast via asyncio.Condition — all stream generators wait on this
+_q_cond: asyncio.Condition | None = None   # initialised in lifespan
+_q_state_json: str = '{"active":null,"pending":[],"history":[]}'
 
 
 async def _q_broadcast() -> None:
-    active  = _active_task.to_dict() if _active_task else None
-    pending = [t.to_dict() for t in _tasks.values() if t.status == "pending"]
+    global _q_state_json
+    active   = _active_task.to_dict() if _active_task else None
+    pending  = [t.to_dict() for t in _tasks.values() if t.status == "pending"]
     done_list = [t for t in _tasks.values() if t.status in ("done", "error", "cancelled")]
-    history = [t.to_dict() for t in sorted(done_list, key=lambda t: t.created_at)][-20:]
-    data = f"data: {json.dumps({'active': active, 'pending': pending, 'history': history})}\n\n"
-    dead = []
-    for q in _q_subscribers:
-        try:
-            q.put_nowait(data)
-        except asyncio.QueueFull:
-            dead.append(q)
-    for q in dead:
-        try:
-            _q_subscribers.remove(q)
-        except ValueError:
-            pass
+    history  = [t.to_dict() for t in sorted(done_list, key=lambda t: t.created_at)][-20:]
+    _q_state_json = json.dumps({"active": active, "pending": pending, "history": history})
+    if _q_cond is not None:
+        async with _q_cond:
+            _q_cond.notify_all()
 
 
 # ── Shared whisper helpers ────────────────────────────────────────────────
 
 async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> list[dict]:
-    """Run align/transcribe in executor (inference lock held). Returns lines."""
-    label = "Aligning" if lyrics else "Transcribing"
-    spy   = _ProgressSpy()
-    loop  = asyncio.get_event_loop()
-
-    model_obj = await get_model()
+    """Run align/transcribe in executor. Returns lines."""
+    label     = "Aligning" if lyrics else "Transcribing"
+    spy       = _ProgressSpy()
+    loop      = asyncio.get_running_loop()
+    model_obj = await get_align_model()
 
     def _run():
         orig = sys.stderr
@@ -261,13 +331,16 @@ async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> l
 
     async with _inference_lock:
         fut = loop.run_in_executor(None, _run)
+        cancelled = False
         elapsed = 0
         while not fut.done():
             if task.cancel_requested:
+                cancelled = True
+                spy.silent = True          # silence tqdm in terminal immediately
                 task.progress = {"stage": "aligning", "msg": "Cancelling…", "pct": 0, "step": "aligning"}
                 await _q_broadcast()
-                await asyncio.shield(fut)   # wait for thread before releasing lock
-                raise asyncio.CancelledError()
+                await asyncio.shield(fut)  # wait for thread (lock held — prevents concurrent model use)
+                break
             prog = spy.latest()
             if prog:
                 pct = 55 + prog["pct"] * 0.44
@@ -280,9 +353,13 @@ async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> l
             task.progress = {"stage": "aligning", "pct": pct, "msg": msg, "step": "aligning",
                              **({"progress": prog} if prog else {})}
             await _q_broadcast()
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             elapsed += 1
-        result = await fut
+        if not cancelled:
+            result = await fut
+
+    if cancelled:
+        raise asyncio.CancelledError()
 
     # Extract words
     words: list[dict] = []
@@ -319,8 +396,8 @@ async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> l
 async def _whisper_verify_worker(task: QueueTask, tmp_path: str, lyrics: str) -> list[dict]:
     """Free-transcribe + compare. Returns verify_results list."""
     spy      = _ProgressSpy()
-    loop     = asyncio.get_event_loop()
-    model_v  = await get_model()
+    loop     = asyncio.get_running_loop()
+    model_v  = await get_verify_model()
 
     def _run():
         orig = sys.stderr
@@ -332,11 +409,16 @@ async def _whisper_verify_worker(task: QueueTask, tmp_path: str, lyrics: str) ->
 
     async with _inference_lock:
         fut = loop.run_in_executor(None, _run)
+        cancelled = False
         elapsed = 0
         while not fut.done():
             if task.cancel_requested:
-                await asyncio.shield(fut)
-                raise asyncio.CancelledError()
+                cancelled = True
+                spy.silent = True          # silence tqdm in terminal immediately
+                task.progress = {"stage": "transcribing", "msg": "Cancelling…", "pct": 0, "step": "verifying"}
+                await _q_broadcast()
+                await asyncio.shield(fut)  # wait for thread (lock held)
+                break
             prog = spy.latest()
             if prog:
                 pct = 42 + prog["pct"] * 0.53
@@ -349,9 +431,13 @@ async def _whisper_verify_worker(task: QueueTask, tmp_path: str, lyrics: str) ->
             task.progress = {"stage": "transcribing", "pct": pct, "msg": msg, "step": "verifying",
                              **({"progress": prog} if prog else {})}
             await _q_broadcast()
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             elapsed += 1
-        result = await fut
+        if not cancelled:
+            result = await fut
+
+    if cancelled:
+        raise asyncio.CancelledError()
 
     transcription = result.text or ""
     lyric_lines   = [l for l in lyrics.split("\n") if l.strip()]
@@ -377,13 +463,17 @@ async def _download_audio(task: QueueTask, song: dict) -> str:
 # ── Task runners ──────────────────────────────────────────────────────────
 
 async def _run_sync_task(task: QueueTask) -> None:
-    task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
-    await _q_broadcast()
-    song = await jw_get(f"/songs/{task.song_id}/")
-    if not song.get("path"):
-        raise ValueError("No audio file for this song.")
-    lyrics   = task.lyrics or song.get("lyrics", "") or ""
-    tmp_path = await _download_audio(task, song)
+    if task.local_path:
+        tmp_path = task.local_path
+        lyrics   = task.lyrics
+    else:
+        task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
+        await _q_broadcast()
+        song = await jw_get(f"/songs/{task.song_id}/")
+        if not song.get("path"):
+            raise ValueError("No audio file for this song.")
+        lyrics   = task.lyrics or song.get("lyrics", "") or ""
+        tmp_path = await _download_audio(task, song)
     if task.cancel_requested:
         raise asyncio.CancelledError()
     task.progress = {"stage": "loading", "msg": "Loading Whisper model…", "step": "loading", "pct": 52}
@@ -394,15 +484,19 @@ async def _run_sync_task(task: QueueTask) -> None:
 
 
 async def _run_verify_task(task: QueueTask) -> None:
-    task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
-    await _q_broadcast()
-    song = await jw_get(f"/songs/{task.song_id}/")
-    if not song.get("path"):
-        raise ValueError("No audio file for this song.")
-    lyrics = task.lyrics or song.get("lyrics", "") or ""
+    if task.local_path:
+        tmp_path = task.local_path
+        lyrics   = task.lyrics
+    else:
+        task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
+        await _q_broadcast()
+        song = await jw_get(f"/songs/{task.song_id}/")
+        if not song.get("path"):
+            raise ValueError("No audio file for this song.")
+        lyrics = task.lyrics or song.get("lyrics", "") or ""
+        tmp_path = await _download_audio(task, song)
     if not lyrics:
         raise ValueError("No lyrics to verify against.")
-    tmp_path = await _download_audio(task, song)
     if task.cancel_requested:
         raise asyncio.CancelledError()
     task.progress = {"stage": "loading", "msg": "Loading Whisper model…", "step": "loading", "pct": 38}
@@ -417,12 +511,39 @@ async def _run_verify_task(task: QueueTask) -> None:
                      "step": "done", "pct": 100}
 
 
+async def _run_transcribe_task(task: QueueTask) -> None:
+    """Transcribe audio to plain text, ignoring any existing lyrics."""
+    if task.local_path:
+        tmp_path = task.local_path
+    else:
+        task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
+        await _q_broadcast()
+        song = await jw_get(f"/songs/{task.song_id}/")
+        if not song.get("path"):
+            raise ValueError("No audio file for this song.")
+        tmp_path = await _download_audio(task, song)
+    if task.cancel_requested:
+        raise asyncio.CancelledError()
+    task.progress = {"stage": "loading", "msg": "Loading Whisper model…", "step": "loading", "pct": 30}
+    await _q_broadcast()
+    # Run with empty lyrics → transcription mode
+    lines = await _whisper_sync_worker(task, tmp_path, "")
+    plain_text = "\n".join(l["line"] for l in lines)
+    task.result   = {"lines": lines, "text": plain_text}
+    task.progress = {"stage": "done", "msg": f"Transcribed — {len(lines)} lines", "step": "done", "pct": 100}
+
+
 async def _run_auto_task(task: QueueTask) -> None:
     """Genius → verify → sync pipeline."""
-    task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
-    await _q_broadcast()
-    song   = await jw_get(f"/songs/{task.song_id}/")
-    lyrics = task.lyrics or song.get("lyrics", "") or ""
+    if task.local_path:
+        tmp_path = task.local_path
+        lyrics   = task.lyrics
+        song     = {"path": task.local_path}  # minimal stub so later code stays happy
+    else:
+        task.progress = {"stage": "fetching", "msg": "Fetching song info…", "step": "fetching", "pct": 2}
+        await _q_broadcast()
+        song   = await jw_get(f"/songs/{task.song_id}/")
+        lyrics = task.lyrics or song.get("lyrics", "") or ""
 
     # Step 1: Genius if no lyrics
     if not lyrics:
@@ -453,10 +574,11 @@ async def _run_auto_task(task: QueueTask) -> None:
     if task.cancel_requested:
         raise asyncio.CancelledError()
 
-    # Step 2: Download + Verify
-    task.progress = {"stage": "verifying", "msg": "Downloading audio for verify…", "step": "verifying", "pct": 10}
-    await _q_broadcast()
-    tmp_path = await _download_audio(task, song)
+    # Step 2: Download (skipped for local files) + Verify
+    if not task.local_path:
+        task.progress = {"stage": "verifying", "msg": "Downloading audio for verify…", "step": "verifying", "pct": 10}
+        await _q_broadcast()
+        tmp_path = await _download_audio(task, song)
     if task.cancel_requested:
         raise asyncio.CancelledError()
     task.progress = {"stage": "loading", "msg": "Loading Whisper model…", "step": "loading", "pct": 25}
@@ -495,7 +617,7 @@ async def _queue_processor() -> None:
     while True:
         task = await _task_queue.get()
 
-        if task.status == "cancelled":
+        if task.status in ("cancelled", "cancelling"):
             _task_queue.task_done()
             await _q_broadcast()
             continue
@@ -511,7 +633,9 @@ async def _queue_processor() -> None:
                 await _run_verify_task(task)
             elif task.type == "auto":
                 await _run_auto_task(task)
-            if task.status == "running":        # runner didn't set error
+            elif task.type == "transcribe":
+                await _run_transcribe_task(task)
+            if task.status in ("running", "cancelling"):   # runner didn't set error/cancelled
                 task.status = "done"
         except asyncio.CancelledError:
             task.status = "cancelled"
@@ -535,6 +659,8 @@ async def _queue_processor() -> None:
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _q_cond
+    _q_cond = asyncio.Condition()
     proc = asyncio.create_task(_queue_processor())
     yield
     proc.cancel()
@@ -572,31 +698,84 @@ async def get_song(song_id: int):
     return await jw_get(f"/songs/{song_id}/")
 
 
+@app.get("/api/songs/all")
+async def get_all_songs():
+    """Fetches every song by walking the paginated /songs/ listing."""
+    songs = []
+    page = 1
+    while True:
+        data = await jw_get("/songs/", {"page": page, "page_size": 100})
+        songs.extend(data.get("results", []))
+        if not data.get("next"):
+            break
+        page += 1
+    return {"songs": songs}
+
+
 @app.get("/api/model")
 async def get_model_info():
     import torch
+    avail_device = "cuda" if torch.cuda.is_available() else "cpu"
     return {
-        "model": MODEL_SIZE,
-        "loaded": _model is not None,
-        "device": "cuda" if (torch.cuda.is_available()) else "cpu",
-        "models": WHISPER_MODELS,
+        # legacy field kept for backward-compat
+        "model": ALIGN_MODEL_SIZE,
+        "loaded": _align_model is not None,
+        # new fields
+        "align_model":   ALIGN_MODEL_SIZE,
+        "verify_model":  VERIFY_MODEL_SIZE,
+        "device_pref":   DEVICE_PREF,
+        "device":        avail_device,
+        "align_loaded":  _align_model is not None,
+        "verify_loaded": _verify_model is not None,
+        "models":        WHISPER_MODELS,
     }
 
 
 @app.post("/api/model")
 async def set_model(body: dict):
-    global MODEL_SIZE, _model
-    name = body.get("model", "").strip()
-    if name not in WHISPER_MODELS:
-        raise HTTPException(400, f"Unknown model '{name}'. Choose from: {WHISPER_MODELS}")
-    async with _model_lock:
-        MODEL_SIZE = name
-        _model = None   # will reload on next /api/sync call
-    try:
-        _MODEL_PREF_FILE.write_text(name)
-    except OSError:
-        pass
-    return {"model": MODEL_SIZE, "loaded": False}
+    global ALIGN_MODEL_SIZE, VERIFY_MODEL_SIZE, DEVICE_PREF
+    global _align_model, _verify_model
+
+    changed_device = False
+
+    if "device_pref" in body:
+        pref = body["device_pref"].strip()
+        if pref not in ("auto", "cpu", "cuda"):
+            raise HTTPException(400, f"device_pref must be auto | cpu | cuda")
+        DEVICE_PREF = pref
+        _write_pref(".device_pref", pref)
+        changed_device = True
+
+    if "align_model" in body or "model" in body:     # "model" = legacy key
+        name = (body.get("align_model") or body.get("model", "")).strip()
+        if name not in WHISPER_MODELS:
+            raise HTTPException(400, f"Unknown model '{name}'")
+        ALIGN_MODEL_SIZE = name
+        _align_model = None
+        _write_pref(".model_pref_align", name)
+        _write_pref(".model_pref", name)              # keep legacy file in sync
+
+    if "verify_model" in body:
+        name = body["verify_model"].strip()
+        if name not in WHISPER_MODELS:
+            raise HTTPException(400, f"Unknown model '{name}'")
+        VERIFY_MODEL_SIZE = name
+        _verify_model = None
+        _write_pref(".model_pref_verify", name)
+
+    if changed_device:
+        _align_model  = None   # force reload on new device
+        _verify_model = None
+
+    import torch
+    return {
+        "align_model":   ALIGN_MODEL_SIZE,
+        "verify_model":  VERIFY_MODEL_SIZE,
+        "device_pref":   DEVICE_PREF,
+        "device":        "cuda" if torch.cuda.is_available() else "cpu",
+        "align_loaded":  _align_model is not None,
+        "verify_loaded": _verify_model is not None,
+    }
 
 
 @app.get("/api/radio/random")
@@ -1018,19 +1197,35 @@ async def sync_lyrics(req: SyncRequest):
 
 
 # ---------------------------------------------------------------------------
+# Local file upload
+# ---------------------------------------------------------------------------
+
+@app.post("/api/upload")
+async def upload_audio(file: UploadFile = File(...)):
+    """Accept a local audio file, save it to UPLOAD_DIR, return the server path."""
+    suffix = pathlib.Path(file.filename or "audio").suffix or ".mp3"
+    uid    = str(uuid.uuid4())[:8]
+    dest   = UPLOAD_DIR / f"{uid}{suffix}"
+    contents = await file.read()
+    dest.write_bytes(contents)
+    return {"path": str(dest), "name": file.filename or "local file"}
+
+
+# ---------------------------------------------------------------------------
 # Queue API
 # ---------------------------------------------------------------------------
 
 class QueueAddRequest(BaseModel):
     type: str        # "sync" | "verify" | "auto"
-    song_id: int
+    song_id: int = 0
     song_name: str
     lyrics: str = ""
+    local_path: str = ""  # set when syncing a local file instead of an API song
 
 
 @app.post("/api/queue")
 async def queue_add(req: QueueAddRequest):
-    if req.type not in ("sync", "verify", "auto"):
+    if req.type not in ("sync", "verify", "auto", "transcribe"):
         raise HTTPException(400, f"Unknown task type '{req.type}'")
     task = QueueTask(
         id=str(uuid.uuid4())[:8],
@@ -1038,6 +1233,7 @@ async def queue_add(req: QueueAddRequest):
         song_id=req.song_id,
         song_name=req.song_name,
         lyrics=req.lyrics,
+        local_path=req.local_path,
     )
     _tasks[task.id] = task
     await _task_queue.put(task)
@@ -1047,11 +1243,22 @@ async def queue_add(req: QueueAddRequest):
 
 @app.get("/api/queue")
 async def queue_state():
-    active  = _active_task.to_dict() if _active_task else None
-    pending = [t.to_dict() for t in _tasks.values() if t.status == "pending"]
+    active   = _active_task.to_dict() if _active_task else None
+    pending  = [t.to_dict() for t in _tasks.values() if t.status == "pending"]
     done_list = [t for t in _tasks.values() if t.status in ("done", "error", "cancelled")]
-    history = [t.to_dict() for t in sorted(done_list, key=lambda t: t.created_at)][-20:]
+    history  = [t.to_dict() for t in sorted(done_list, key=lambda t: t.created_at)][-20:]
     return {"active": active, "pending": pending, "history": history}
+
+
+@app.delete("/api/queue/history")
+async def clear_queue_history():
+    """Remove all completed/error/cancelled tasks from the queue."""
+    to_remove = [tid for tid, t in _tasks.items()
+                 if t.status in ("done", "error", "cancelled")]
+    for tid in to_remove:
+        del _tasks[tid]
+    await _q_broadcast()
+    return {"cleared": len(to_remove)}
 
 
 @app.post("/api/queue/{task_id}/cancel")
@@ -1062,42 +1269,44 @@ async def queue_cancel(task_id: str):
     task.cancel_requested = True
     if task.status == "pending":
         task.status = "cancelled"
+    elif task.status == "running":
+        task.progress = {**task.progress, "msg": "Cancelling…"}
+        task.status = "cancelling"
     await _q_broadcast()
     return {"cancelled": True}
 
 
 @app.get("/api/queue/stream")
 async def queue_stream():
-    q: asyncio.Queue = asyncio.Queue(maxsize=100)
-    _q_subscribers.append(q)
-
-    # Send initial state immediately
-    active  = _active_task.to_dict() if _active_task else None
-    pending = [t.to_dict() for t in _tasks.values() if t.status == "pending"]
-    done_list = [t for t in _tasks.values() if t.status in ("done", "error", "cancelled")]
-    history = [t.to_dict() for t in sorted(done_list, key=lambda t: t.created_at)][-20:]
-    initial = f"data: {json.dumps({'active': active, 'pending': pending, 'history': history})}\n\n"
+    if _q_cond is None:
+        raise HTTPException(503, "Server not ready yet")
 
     async def gen():
-        yield initial
-        try:
-            while True:
+        yield f"data: {_q_state_json}\n\n"
+        while True:
+            async with _q_cond:
                 try:
-                    msg = await asyncio.wait_for(q.get(), timeout=25)
-                    yield msg
+                    await asyncio.wait_for(_q_cond.wait(), timeout=25)
+                    data = _q_state_json
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-        finally:
-            try:
-                _q_subscribers.remove(q)
-            except ValueError:
-                pass
+                    data = None
+            if data is not None:
+                yield f"data: {data}\n\n"
+            else:
+                yield ": keepalive\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-# ---------------------------------------------------------------------------
-# Serve frontend — must be last so API routes take priority
-# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def no_cache_html(request: Request, call_next):
+    # Chrome heuristically caches HTML served with only Last-Modified, which
+    # keeps stale copies of the UI alive across edits — force revalidation.
+    response = await call_next(request)
+    if request.url.path.endswith(".html") or request.url.path in ("", "/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

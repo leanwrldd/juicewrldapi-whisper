@@ -123,10 +123,13 @@ def confirm(prompt: str, auto_yes: bool, default_yes: bool = True) -> bool:
 # git / process helpers
 # ---------------------------------------------------------------------------
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
+    # On Windows, things like npm/npx are .cmd shims that CreateProcess can't
+    # launch directly without going through a shell.
+    use_shell = sys.platform == "win32"
     if capture:
-        result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+        result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, shell=use_shell)
     else:
-        result = subprocess.run(cmd, cwd=cwd, text=True)
+        result = subprocess.run(cmd, cwd=cwd, text=True, shell=use_shell)
     if check and result.returncode != 0:
         if capture:
             print(result.stdout)

@@ -137,6 +137,26 @@
     display: none;
   }
   .progress-log.visible { display: block; }
+
+  .bar-track {
+    margin-top: 12px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: none;
+  }
+  .bar-track.visible { display: block; }
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width .2s ease;
+  }
+  .bar-sub { margin-top: 6px; font-size: .72rem; color: var(--muted); }
+  .btn-row { display: flex; gap: 10px; align-items: center; }
 </style>
 </head>
 <body>
@@ -153,6 +173,39 @@
 </header>
 
 <main>
+  <div class="card">
+    <h2>Updates</h2>
+    <div class="desc">
+      WRLD Sync checks GitHub for new releases automatically on launch. You can also check
+      manually here.
+    </div>
+
+    <div class="status-row" id="updateStatusRow">
+      <div class="dot unknown" id="updateDot"></div>
+      <div>
+        <div class="status-text" id="updateStatusText">Checking…</div>
+        <div class="status-sub" id="updateStatusSub"></div>
+      </div>
+    </div>
+
+    <div class="bar-track" id="updateBarTrack">
+      <div class="bar-fill" id="updateBarFill"></div>
+    </div>
+    <div class="bar-sub" id="updateBarSub"></div>
+
+    <div id="updateElectronControls" style="display:none;">
+      <div class="btn-row">
+        <button class="btn" id="checkUpdateBtn">Check for updates</button>
+        <button class="btn" id="downloadUpdateBtn" style="display:none;">Download update</button>
+        <button class="btn" id="restartUpdateBtn" style="display:none;">Restart &amp; install</button>
+      </div>
+    </div>
+
+    <div class="not-electron" id="updateNotElectronMsg" style="display:none;">
+      Update checks are only available from the WRLD Sync desktop app.
+    </div>
+  </div>
+
   <div class="card">
     <h2>GPU Acceleration</h2>
     <div class="desc">
@@ -192,6 +245,97 @@
   const hasElectronAPI = typeof window.electronAPI !== 'undefined';
   electronControls.style.display = hasElectronAPI ? 'block' : 'none';
   notElectronMsg.style.display = hasElectronAPI ? 'none' : 'block';
+
+  // --- Updates ---
+  const updateDot = document.getElementById('updateDot');
+  const updateStatusText = document.getElementById('updateStatusText');
+  const updateStatusSub = document.getElementById('updateStatusSub');
+  const updateBarTrack = document.getElementById('updateBarTrack');
+  const updateBarFill = document.getElementById('updateBarFill');
+  const updateBarSub = document.getElementById('updateBarSub');
+  const updateElectronControls = document.getElementById('updateElectronControls');
+  const updateNotElectronMsg = document.getElementById('updateNotElectronMsg');
+  const checkUpdateBtn = document.getElementById('checkUpdateBtn');
+  const downloadUpdateBtn = document.getElementById('downloadUpdateBtn');
+  const restartUpdateBtn = document.getElementById('restartUpdateBtn');
+
+  updateElectronControls.style.display = hasElectronAPI ? 'block' : 'none';
+  updateNotElectronMsg.style.display = hasElectronAPI ? 'none' : 'block';
+
+  function setUpdateStatus(dotClass, text, sub) {
+    updateDot.className = `dot ${dotClass}`;
+    updateStatusText.textContent = text;
+    updateStatusSub.textContent = sub || '';
+  }
+
+  function formatBytes(n) {
+    if (!n && n !== 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(1)} ${units[i]}`;
+  }
+
+  if (hasElectronAPI) {
+    window.electronAPI.getAppVersion().then((v) => {
+      setUpdateStatus('unknown', `Up to date (v${v})`, '');
+    });
+
+    window.electronAPI.onUpdaterEvent((payload) => {
+      if (payload.phase === 'checking') {
+        setUpdateStatus('unknown', 'Checking for updates…', '');
+        checkUpdateBtn.disabled = true;
+        downloadUpdateBtn.style.display = 'none';
+        restartUpdateBtn.style.display = 'none';
+        updateBarTrack.classList.remove('visible');
+      } else if (payload.phase === 'not-available') {
+        setUpdateStatus('gpu', "You're up to date", `v${payload.version}`);
+        checkUpdateBtn.disabled = false;
+      } else if (payload.phase === 'available') {
+        setUpdateStatus('cpu', `Update available: v${payload.version}`, '');
+        checkUpdateBtn.disabled = false;
+        checkUpdateBtn.style.display = 'none';
+        downloadUpdateBtn.style.display = 'inline-flex';
+      } else if (payload.phase === 'downloading') {
+        updateBarTrack.classList.add('visible');
+        updateBarFill.style.width = `${payload.percent.toFixed(1)}%`;
+        updateBarSub.textContent =
+          `${formatBytes(payload.transferred)} / ${formatBytes(payload.total)}  (${formatBytes(payload.bytesPerSecond)}/s)`;
+        setUpdateStatus('cpu', 'Downloading update…', `${payload.percent.toFixed(0)}%`);
+        downloadUpdateBtn.style.display = 'none';
+      } else if (payload.phase === 'downloaded') {
+        setUpdateStatus('gpu', `Update v${payload.version} ready`, 'Restart to finish installing');
+        updateBarTrack.classList.remove('visible');
+        restartUpdateBtn.style.display = 'inline-flex';
+      } else if (payload.phase === 'error') {
+        setUpdateStatus('unknown', 'Update check failed', payload.message);
+        checkUpdateBtn.disabled = false;
+        checkUpdateBtn.style.display = 'inline-flex';
+      }
+    });
+
+    checkUpdateBtn.addEventListener('click', async () => {
+      const result = await window.electronAPI.checkForUpdates();
+      if (result && result.error) {
+        setUpdateStatus('unknown', 'Update check unavailable', result.error);
+      }
+    });
+
+    downloadUpdateBtn.addEventListener('click', async () => {
+      downloadUpdateBtn.disabled = true;
+      const result = await window.electronAPI.downloadUpdate();
+      downloadUpdateBtn.disabled = false;
+      if (result && result.error) {
+        setUpdateStatus('unknown', 'Download failed', result.error);
+        downloadUpdateBtn.style.display = 'inline-flex';
+        checkUpdateBtn.style.display = 'inline-flex';
+      }
+    });
+
+    restartUpdateBtn.addEventListener('click', () => {
+      window.electronAPI.installUpdate();
+    });
+  }
 
   function renderStatus(data) {
     if (!data || data.error) {

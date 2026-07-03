@@ -16,13 +16,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import mimetypes
 import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -105,6 +108,54 @@ def fail(text: str) -> None:
     sys.exit(1)
 
 
+def human_size(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def human_time(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    return f"{minutes}m{seconds:02d}s"
+
+
+class ProgressBar:
+    """A simple in-place terminal progress bar for byte-based transfers."""
+
+    def __init__(self, label: str, total: int, width: int = 28):
+        self.label = label
+        self.total = total
+        self.width = width
+        self.done = 0
+        self.start = time.time()
+        self._last_len = 0
+
+    def update(self, done: int) -> None:
+        self.done = done
+        frac = (done / self.total) if self.total else 1.0
+        frac = min(1.0, frac)
+        filled = int(self.width * frac)
+        bar = "#" * filled + "-" * (self.width - filled)
+        elapsed = max(time.time() - self.start, 0.001)
+        speed = done / elapsed
+        line = (f"  {self.label} [{bar}] {frac * 100:5.1f}%  "
+                f"{human_size(done)}/{human_size(self.total)}  {human_size(speed)}/s")
+        pad = max(0, self._last_len - len(line))
+        sys.stdout.write("\r" + line + (" " * pad))
+        sys.stdout.flush()
+        self._last_len = len(line)
+
+    def finish(self) -> None:
+        self.update(self.total)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
 def confirm(prompt: str, auto_yes: bool, default_yes: bool = True) -> bool:
     if auto_yes:
         return True
@@ -138,6 +189,42 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True, capture: bo
             print(result.stderr, file=sys.stderr)
         fail(f"Command failed: {' '.join(cmd)}")
     return result
+
+
+_NOISY_LINE_RE = re.compile(r"signing with signtool\.exe|no signing info identified")
+
+
+def run_build_command(cmd: list[str], cwd: Path, env: dict | None = None) -> None:
+    """Streams a build command's output live, collapsing the repetitive
+    per-file 'signing with signtool.exe / no signing info identified' spam
+    electron-builder emits (one pair per bundled .exe, often 40+ times) into
+    a single updating line."""
+    full_env = {**os.environ, **env} if env else None
+    use_shell = sys.platform == "win32"
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, text=True, shell=use_shell, env=full_env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+    )
+    start = time.time()
+    hidden = 0
+    assert proc.stdout is not None
+    for raw_line in proc.stdout:
+        line = raw_line.rstrip("\n")
+        if _NOISY_LINE_RE.search(line):
+            hidden += 1
+            sys.stdout.write(f"\r  {paint('...', C.DIM)} signing bundled binaries "
+                              f"({hidden} so far, {human_time(time.time() - start)})   ")
+            sys.stdout.flush()
+            continue
+        if hidden:
+            sys.stdout.write("\n")
+            hidden = 0
+        print(f"  {paint(line, C.DIM)}")
+    if hidden:
+        print()
+    proc.wait()
+    if proc.returncode != 0:
+        fail(f"Command failed ({human_time(time.time() - start)}): {' '.join(cmd)}")
 
 
 def git_status_porcelain() -> str:
@@ -255,21 +342,29 @@ def step_build(args, total: int, idx: int) -> tuple[str, Path]:
 
     if not (ELECTRON_DIR / "node_modules").exists():
         info("node_modules not found, running npm install...")
+        t0 = time.time()
         run(["npm", "install"], cwd=ELECTRON_DIR)
+        ok(f"Dependencies installed ({human_time(time.time() - t0)}).")
 
     info("Running npm run dist (this can take a few minutes)...")
+    t0 = time.time()
     # We don't code-sign the installer, so skip electron-builder's automatic
     # signing-certificate discovery: on Windows it otherwise downloads a
     # cross-signing toolkit containing macOS symlinks that fail to extract
     # without Developer Mode/admin (SeCreateSymbolicLinkPrivilege).
-    run(["npm", "run", "dist"], cwd=ELECTRON_DIR, env={"CSC_IDENTITY_AUTO_DISCOVERY": "false"})
+    # --publish never: we publish ourselves below (tag -> release -> asset
+    # upload), so electron-builder shouldn't try to auto-publish using
+    # whatever GH token happens to be in the environment at build time.
+    run_build_command(["npm", "run", "dist", "--", "--publish", "never"],
+                       cwd=ELECTRON_DIR, env={"CSC_IDENTITY_AUTO_DISCOVERY": "false"})
+    ok(f"Build finished in {human_time(time.time() - t0)}.")
 
     dist_dir = ELECTRON_DIR / "dist"
     installers = sorted(dist_dir.glob("*.exe"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not installers:
         fail(f"Build finished but no .exe found in {dist_dir}")
     installer = installers[0]
-    ok(f"Built {installer.name} ({installer.stat().st_size / 1_000_000:.1f} MB)")
+    ok(f"Built {installer.name} ({human_size(installer.stat().st_size)})")
     return new_version, installer
 
 
@@ -294,20 +389,75 @@ def create_github_release(owner: str, repo: str, token: str, tag: str, name: str
         fail(f"GitHub release creation failed ({e.code}): {e.read().decode(errors='replace')}")
 
 
-def upload_release_asset(upload_url_template: str, token: str, file_path: Path) -> dict:
-    upload_url = upload_url_template.split("{")[0] + f"?name={file_path.name}"
-    content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-    data = file_path.read_bytes()
-    req = urllib.request.Request(upload_url, data=data, method="POST", headers={
+def get_github_release(owner: str, repo: str, token: str, tag: str) -> dict | None:
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
-        "Content-Type": content_type,
-        "Content-Length": str(len(data)),
+        "Accept": "application/vnd.github+json",
     })
     try:
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        fail(f"Asset upload failed ({e.code}): {e.read().decode(errors='replace')}")
+        if e.code == 404:
+            return None
+        fail(f"GitHub release lookup failed ({e.code}): {e.read().decode(errors='replace')}")
+
+
+def local_tag_exists(tag: str) -> bool:
+    result = run(["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"], cwd=ROOT, check=False, capture=True)
+    return result.returncode == 0
+
+
+def upload_release_asset(upload_url_template: str, token: str, file_path: Path) -> dict:
+    upload_url = upload_url_template.split("{")[0] + f"?name={urllib.parse.quote(file_path.name)}"
+    parsed = urllib.parse.urlparse(upload_url)
+    content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    total = file_path.stat().st_size
+
+    conn = http.client.HTTPSConnection(parsed.netloc)
+    path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    conn.putrequest("POST", path)
+    conn.putheader("Authorization", f"Bearer {token}")
+    conn.putheader("Content-Type", content_type)
+    conn.putheader("Content-Length", str(total))
+    conn.endheaders()
+
+    bar = ProgressBar("Uploading", total)
+    sent = 0
+    chunk_size = 1024 * 1024
+    with file_path.open("rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            conn.send(chunk)
+            sent += len(chunk)
+            bar.update(sent)
+    bar.finish()
+
+    resp = conn.getresponse()
+    body = resp.read()
+    if resp.status >= 400:
+        fail(f"Asset upload failed ({resp.status}): {body.decode(errors='replace')}")
+    return json.loads(body)
+
+
+def find_release_assets(installer: Path) -> list[Path]:
+    """The installer plus whatever electron-builder wrote alongside it that
+    electron-updater needs: latest.yml (update metadata) and the .blockmap
+    (differential-download support). Order matters: latest.yml should be
+    uploaded last since electron-updater treats its presence as "this
+    release is ready to be discovered"."""
+    dist_dir = installer.parent
+    assets = [installer]
+    blockmap = installer.with_name(installer.name + ".blockmap")
+    if blockmap.exists():
+        assets.append(blockmap)
+    yml = dist_dir / "latest.yml"
+    if yml.exists():
+        assets.append(yml)
+    return assets
 
 
 def step_release(args, total: int, idx: int, version: str, installer: Path) -> None:
@@ -324,24 +474,42 @@ def step_release(args, total: int, idx: int, version: str, installer: Path) -> N
 
     if args.dry_run:
         info(f"[dry-run] git tag {tag} && git push origin {tag}")
-        info(f"[dry-run] create GitHub release {tag}, upload {installer}")
+        info(f"[dry-run] create GitHub release {tag}, upload {installer} + latest.yml + blockmap")
         return
 
     if not installer.exists():
         fail(f"Installer not found at {installer} (did the build step run?)")
 
-    run(["git", "tag", tag], cwd=ROOT)
-    run(["git", "push", "origin", tag], cwd=ROOT)
-    ok(f"Tag {tag} pushed.")
+    assets = find_release_assets(installer)
+    if not any(a.name == "latest.yml" for a in assets):
+        warn("No latest.yml found next to the installer — auto-update won't be able to "
+             "detect this release. Make sure electron/package.json has a 'publish' config.")
+
+    if local_tag_exists(tag):
+        info(f"Tag {tag} already exists locally, skipping tag/push.")
+    else:
+        run(["git", "tag", tag], cwd=ROOT)
+        run(["git", "push", "origin", tag], cwd=ROOT)
+        ok(f"Tag {tag} pushed.")
 
     token = github_token()
-    body = args.message or f"WRLD Sync {version}"
-    release = create_github_release(owner, repo, token, tag, f"WRLD Sync {version}", body)
-    ok(f"Release created: {release['html_url']}")
+    release = get_github_release(owner, repo, token, tag)
+    if release:
+        info(f"Release {tag} already exists, reusing it.")
+    else:
+        body = args.message or f"WRLD Sync {version}"
+        release = create_github_release(owner, repo, token, tag, f"WRLD Sync {version}", body)
+        ok(f"Release created: {release['html_url']}")
 
-    info(f"Uploading {installer.name} ({installer.stat().st_size / 1_000_000:.1f} MB)...")
-    upload_release_asset(release["upload_url"], token, installer)
-    ok("Asset uploaded.")
+    existing_names = {a["name"] for a in release.get("assets", [])}
+    for asset_path in assets:
+        if asset_path.name in existing_names:
+            info(f"{asset_path.name} is already uploaded to this release, skipping.")
+            continue
+        info(f"Uploading {asset_path.name}...")
+        t0 = time.time()
+        upload_release_asset(release["upload_url"], token, asset_path)
+        ok(f"{asset_path.name} uploaded in {human_time(time.time() - t0)}.")
 
     print(f"\n{paint('Release published:', C.GREEN, C.BOLD)} {release['html_url']}")
 
@@ -365,6 +533,7 @@ def main() -> None:
     if args.dry_run:
         warn("Dry run: no changes will actually be made.")
 
+    run_start = time.time()
     steps = [s for s, skip in [
         ("commit", args.skip_commit),
         ("push", args.skip_push),
@@ -399,7 +568,9 @@ def main() -> None:
         print()
         fail("Cancelled.")
 
-    print(f"\n{paint('Done.', C.GREEN, C.BOLD)}")
+    print(f"\n{paint('Done', C.GREEN, C.BOLD)} in {human_time(time.time() - run_start)}.")
+    if installer is not None and installer.exists():
+        info(f"Installer: {installer} ({human_size(installer.stat().st_size)})")
 
 
 if __name__ == "__main__":

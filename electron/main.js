@@ -3,6 +3,7 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 const http = require('http');
+const { autoUpdater } = require('electron-updater');
 
 const isPackaged = app.isPackaged;
 
@@ -101,6 +102,12 @@ async function createWindow() {
   });
 
   mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`);
+
+  if (isPackaged) {
+    // Give the window a moment to settle before checking so we don't race
+    // the initial page load, then check silently in the background.
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000);
+  }
 }
 
 app.whenReady().then(createWindow);
@@ -180,4 +187,53 @@ ipcMain.handle('system:install-gpu', async (event) => {
     }
     return { ok: false, error: err.message };
   }
+});
+
+// --- IPC: auto-update ---
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function sendUpdaterEvent(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:event', payload);
+  }
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdaterEvent({ phase: 'checking' }));
+autoUpdater.on('update-available', (info) => sendUpdaterEvent({ phase: 'available', version: info.version }));
+autoUpdater.on('update-not-available', (info) => sendUpdaterEvent({ phase: 'not-available', version: info.version }));
+autoUpdater.on('error', (err) => sendUpdaterEvent({ phase: 'error', message: err?.message || String(err) }));
+autoUpdater.on('download-progress', (progress) => sendUpdaterEvent({
+  phase: 'downloading',
+  percent: progress.percent,
+  transferred: progress.transferred,
+  total: progress.total,
+  bytesPerSecond: progress.bytesPerSecond,
+}));
+autoUpdater.on('update-downloaded', (info) => sendUpdaterEvent({ phase: 'downloaded', version: info.version }));
+
+ipcMain.handle('app:version', () => app.getVersion());
+
+ipcMain.handle('updater:check', async () => {
+  if (!isPackaged) return { error: 'Auto-update only runs in a packaged build, not in dev mode.' };
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('updater:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('updater:install', async () => {
+  await stopBackend();
+  autoUpdater.quitAndInstall();
 });

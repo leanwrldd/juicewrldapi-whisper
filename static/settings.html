@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — WRLD Sync</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131c;
+    --surface2: #1c1c2a;
+    --border: #2a2a3d;
+    --accent: #7c3aed;
+    --accent2: #a855f7;
+    --text: #f0f0ff;
+    --muted: #7878a0;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --err: #ef4444;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+  }
+  .logo {
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    white-space: nowrap;
+  }
+  .page-title { font-size: .9rem; font-weight: 600; color: var(--muted); }
+  .back-btn {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    font-size: .82rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .back-btn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+
+  main { flex: 1; overflow-y: auto; padding: 28px; }
+
+  .card {
+    max-width: 640px;
+    margin: 0 auto 20px;
+    padding: 20px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .card h2 { font-size: 1rem; margin-bottom: 4px; }
+  .card .desc { font-size: .82rem; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.gpu { background: var(--ok); }
+  .dot.cpu { background: var(--warn); }
+  .dot.unknown { background: var(--muted); }
+  .status-text { font-size: .85rem; font-weight: 600; }
+  .status-sub { font-size: .75rem; color: var(--muted); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 9px;
+    border: 1px solid var(--accent2);
+    background: rgba(124,58,237,.12);
+    color: var(--text);
+    font-size: .85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s, opacity .15s;
+  }
+  .btn:hover { background: rgba(124,58,237,.22); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .not-electron {
+    font-size: .8rem;
+    color: var(--muted);
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--surface2);
+    border: 1px dashed var(--border);
+  }
+
+  .progress-log {
+    margin-top: 14px;
+    max-height: 160px;
+    overflow-y: auto;
+    background: #08080d;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: .72rem;
+    color: var(--muted);
+    white-space: pre-wrap;
+    display: none;
+  }
+  .progress-log.visible { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">WRLD Sync</div>
+  <span class="page-title">Settings</span>
+  <a class="back-btn" href="/db-manager.html">
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Back
+  </a>
+</header>
+
+<main>
+  <div class="card">
+    <h2>GPU Acceleration</h2>
+    <div class="desc">
+      Whisper alignment runs on the CPU by default. If you have a compatible NVIDIA GPU,
+      installing GPU support speeds up alignment significantly. This is a one-time download
+      (a few GB) and will briefly restart the background service.
+    </div>
+
+    <div class="status-row" id="statusRow">
+      <div class="dot unknown" id="statusDot"></div>
+      <div>
+        <div class="status-text" id="statusText">Checking…</div>
+        <div class="status-sub" id="statusSub"></div>
+      </div>
+    </div>
+
+    <div id="electronControls" style="display:none;">
+      <button class="btn" id="installBtn">Enable GPU acceleration</button>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+
+    <div class="not-electron" id="notElectronMsg" style="display:none;">
+      GPU install/upgrade is only available from the WRLD Sync desktop app.
+    </div>
+  </div>
+</main>
+
+<script>
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const statusSub = document.getElementById('statusSub');
+  const installBtn = document.getElementById('installBtn');
+  const progressLog = document.getElementById('progressLog');
+  const electronControls = document.getElementById('electronControls');
+  const notElectronMsg = document.getElementById('notElectronMsg');
+
+  const hasElectronAPI = typeof window.electronAPI !== 'undefined';
+  electronControls.style.display = hasElectronAPI ? 'block' : 'none';
+  notElectronMsg.style.display = hasElectronAPI ? 'none' : 'block';
+
+  function renderStatus(data) {
+    if (!data || data.error) {
+      statusDot.className = 'dot unknown';
+      statusText.textContent = 'Unable to determine backend status';
+      statusSub.textContent = data && data.error ? data.error : '';
+      return;
+    }
+    if (data.cuda_available) {
+      statusDot.className = 'dot gpu';
+      statusText.textContent = `Running on GPU (${data.device_name || 'CUDA device'})`;
+    } else {
+      statusDot.className = 'dot cpu';
+      statusText.textContent = 'Running on CPU';
+    }
+    statusSub.textContent = `torch ${data.torch_version}`;
+  }
+
+  async function refreshStatus() {
+    try {
+      if (hasElectronAPI) {
+        renderStatus(await window.electronAPI.getGpuStatus());
+      } else {
+        const res = await fetch('/api/system/gpu-status');
+        renderStatus(await res.json());
+      }
+    } catch (e) {
+      renderStatus({ error: e.message });
+    }
+  }
+
+  refreshStatus();
+
+  if (hasElectronAPI) {
+    let unsubscribe = null;
+    installBtn.addEventListener('click', async () => {
+      installBtn.disabled = true;
+      progressLog.textContent = '';
+      progressLog.classList.add('visible');
+
+      unsubscribe = window.electronAPI.onInstallGpuProgress((payload) => {
+        if (payload.phase === 'stopping-backend') progressLog.textContent += 'Stopping backend…\n';
+        else if (payload.phase === 'installing' && payload.log) progressLog.textContent += payload.log;
+        else if (payload.phase === 'installing') progressLog.textContent += 'Installing GPU-enabled torch (this can take a while)…\n';
+        else if (payload.phase === 'restarting-backend') progressLog.textContent += 'Restarting backend…\n';
+        else if (payload.phase === 'done') progressLog.textContent += 'Done.\n';
+        else if (payload.phase === 'error') progressLog.textContent += `Error: ${payload.message}\n`;
+        progressLog.scrollTop = progressLog.scrollHeight;
+      });
+
+      const result = await window.electronAPI.installGpu();
+      if (unsubscribe) unsubscribe();
+      installBtn.disabled = false;
+      if (!result.ok) {
+        alert('GPU install failed: ' + result.error);
+      }
+      refreshStatus();
+    });
+  }
+</script>
+
+</body>
+</html>

@@ -778,6 +778,17 @@ async def set_model(body: dict):
     }
 
 
+@app.get("/api/system/gpu-status")
+async def gpu_status():
+    import torch
+    cuda_available = torch.cuda.is_available()
+    return {
+        "torch_version": torch.__version__,
+        "cuda_available": cuda_available,
+        "device_name": torch.cuda.get_device_name(0) if cuda_available else None,
+    }
+
+
 @app.get("/api/radio/random")
 async def radio_random(
     no_lyrics: bool = False,

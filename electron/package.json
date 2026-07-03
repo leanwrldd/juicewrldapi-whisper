@@ -1,0 +1,46 @@
+{
+  "name": "wrld-sync",
+  "version": "1.0.0",
+  "description": "WRLD Sync desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.leanwrldd.wrldsync",
+    "productName": "WRLD Sync",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../static",
+        "to": "static"
+      },
+      {
+        "from": "../app.py",
+        "to": "app.py"
+      },
+      {
+        "from": "pyruntime",
+        "to": "pyruntime"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -47,6 +47,20 @@
   }
   .page-title { font-size: .9rem; font-weight: 600; color: var(--muted); }
   #status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .sync-status {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid var(--border);
+  }
+  .sync-status:empty { display: none; }
+  .sync-ok      { color: #86efac; border-color: #14532d; background: rgba(34,197,94,.08); }
+  .sync-saving  { color: #fcd34d; border-color: #7c5e10; background: rgba(245,158,11,.08); }
+  .sync-error   { color: #fca5a5; border-color: #7c2d2d; background: rgba(239,68,68,.1); cursor: help; }
 
   .search-wrap { position: relative; width: 260px; margin-left: 12px; }
   .search-wrap svg {
@@ -94,6 +108,13 @@
     transition: color .15s, border-color .15s, background .15s;
   }
   .back-btn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+  .back-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .save-changes-btn.has-pending {
+    color: #fff;
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .save-changes-btn.has-pending:hover:not(:disabled) { background: var(--accent2); border-color: var(--accent2); }
 
   main {
     flex: 1;
@@ -374,6 +395,7 @@
   <div class="logo">WRLD Sync</div>
   <span class="page-title">Autogroup</span>
   <span id="status">Loading songs…</span>
+  <span id="syncStatus" class="sync-status" title=""></span>
   <div class="search-wrap">
     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -386,6 +408,26 @@
       <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
     Collapse all
+  </button>
+  <button id="runAutogroupBtn" class="back-btn" style="margin-left:0" title="Compute version groupings for every song that doesn't already have a saved group">
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    <span id="runAutogroupLabel">Run Autogroup</span>
+  </button>
+  <button id="saveAllBtn" class="back-btn" style="margin-left:0" title="Run Autogroup first" disabled>
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+    </svg>
+    <span id="saveAllLabel">Save all to Supabase</span>
+  </button>
+  <button id="saveChangesBtn" class="back-btn save-changes-btn" style="margin-left:0" title="Push your renames/moves/merges to Supabase" disabled>
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <span id="saveChangesLabel">Save changes</span>
   </button>
   <a class="back-btn" href="/db-manager.html">
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -418,6 +460,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -644,22 +687,258 @@ function highlight(text, q) {
   return esc(text.slice(0, idx)) + '<mark>' + esc(text.slice(idx, idx + q.length)) + '</mark>' + esc(text.slice(idx + q.length));
 }
 
-// ── Manual overrides — user-supplied names for a group or a single version,
-// persisted locally so they survive a reload. Keyed by the auto-generated
-// group key / by song id, so they apply regardless of search or re-render.
-const OVERRIDES_KEY = 'jw_autogroup_overrides';
-function loadOverrides() {
+// ── Manual overrides — user-curated names/groupings, backed by the existing
+// Supabase table `song_versions` (song_id, group_id, version, version_title,
+// added_by). group_id is a stable anchor (the id of whichever song first
+// joined the group); version_title is the group's display name, duplicated
+// on every member row; version is a per-song label override. Presence of a
+// row for a song IS a manual placement — songs with no row use pure
+// automatic grouping/labeling.
+//
+// `overrides` keeps the same { groups, songs, moves } shape the rendering
+// code already expects: a manually-touched auto-group gets a synthetic key
+// "manual:<group_id>" so it can be told apart from a plain auto-computed
+// string key.
+const SUPABASE_URL = 'https://eswphyjhzcyqxjjzkmrq.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzd3BoeWpoemN5cXhqanprbXJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MTgwNDYsImV4cCI6MjA5ODQ5NDA0Nn0.yzgVs7x60ROvteBI3mh_vwLek4RUm5f3TRU75G_xo0g';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SONG_VERSIONS_TABLE = 'song_versions';
+const ADDED_BY = 'Autogroup';
+
+const overrides = { groups: {}, songs: {}, moves: {} };
+
+const syncStatusEl = document.getElementById('syncStatus');
+function setSyncStatus(state, detail) {
+  if (!syncStatusEl) return;
+  syncStatusEl.className = 'sync-status sync-' + state;
+  syncStatusEl.textContent = { ok: 'Synced', saving: 'Saving…', error: 'Sync failed' }[state] ?? '';
+  syncStatusEl.title = detail ? String(detail.message ?? detail) : '';
+}
+
+function manualKeyFor(groupId) { return `manual:${groupId}`; }
+function parseManualKey(key) {
+  if (typeof key !== 'string' || !key.startsWith('manual:')) return null;
+  const n = Number(key.slice(7));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Pulls every song_versions row down from Supabase and populates the
+// in-memory maps. Called once at startup, in parallel with fetching the
+// song catalog.
+async function initOverrides() {
+  setSyncStatus('saving');
   try {
-    const parsed = JSON.parse(localStorage.getItem(OVERRIDES_KEY) || '{}');
-    return { groups: parsed.groups || {}, songs: parsed.songs || {}, moves: parsed.moves || {} };
-  } catch {
-    return { groups: {}, songs: {}, moves: {} };
+    const { data, error } = await sb.from(SONG_VERSIONS_TABLE).select('song_id, group_id, version, version_title');
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const key = manualKeyFor(row.group_id);
+      overrides.moves[row.song_id] = key;
+      if (row.version) overrides.songs[row.song_id] = row.version;
+      if (row.version_title) overrides.groups[key] = row.version_title;
+    }
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error', e);
   }
 }
-const overrides = loadOverrides();
-function persistOverrides() {
-  localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+
+// Ensures every song currently bucketed under `key` shares one group_id —
+// minting one (deterministically, from the lowest song id in the bucket) the
+// first time a pure-auto group is touched. Pure local bookkeeping, no
+// network — the caller does the Supabase write after updating the UI.
+// Returns { groupId, key: manualKey, rows: membersAtMintTime }.
+function localMaterialize(key) {
+  const existingId = parseManualKey(key);
+  const g = groupsByKey.get(key);
+  const rows = g ? g.rows : [];
+  if (existingId !== null) return { groupId: existingId, key, rows };
+
+  const groupId = rows.length ? Math.min(...rows.map(r => r.song.id)) : Date.now();
+  const manualKey = manualKeyFor(groupId);
+  rows.forEach(r => { overrides.moves[r.song.id] = manualKey; });
+  overrides.groups[manualKey] = key; // the auto label becomes the initial manual name
+  return { groupId, key: manualKey, rows };
 }
+
+// ── Pending changes — edits apply locally/instantly (renderer + overrides
+// update right away) but are NOT written to Supabase until "Save changes" is
+// clicked. Keyed by song_id; value is either the desired final row (an
+// upsert) or null (meaning "this song's row should be deleted").
+const pendingChanges = new Map();
+const saveChangesBtn = document.getElementById('saveChangesBtn');
+const saveChangesLabel = document.getElementById('saveChangesLabel');
+
+function queueChange(songId, row) {
+  pendingChanges.set(Number(songId), row);
+  updateSaveChangesButton();
+}
+function updateSaveChangesButton() {
+  const n = pendingChanges.size;
+  saveChangesLabel.textContent = n ? `Save changes (${n})` : 'Save changes';
+  saveChangesBtn.classList.toggle('has-pending', n > 0);
+  saveChangesBtn.disabled = n === 0;
+}
+window.addEventListener('beforeunload', (e) => {
+  if (pendingChanges.size > 0) { e.preventDefault(); e.returnValue = ''; }
+});
+
+async function flushPendingChanges() {
+  if (!pendingChanges.size) return;
+  saveChangesBtn.disabled = true;
+  setSyncStatus('saving');
+  try {
+    const upserts = [];
+    const deleteIds = [];
+    for (const [songId, row] of pendingChanges) {
+      if (row === null) deleteIds.push(songId);
+      else upserts.push({ song_id: songId, ...row, added_by: ADDED_BY });
+    }
+    const CHUNK = 500;
+    for (let i = 0; i < upserts.length; i += CHUNK) {
+      const { error } = await sb.from(SONG_VERSIONS_TABLE).upsert(upserts.slice(i, i + CHUNK), { onConflict: 'song_id' });
+      if (error) throw error;
+    }
+    for (let i = 0; i < deleteIds.length; i += CHUNK) {
+      const { error } = await sb.from(SONG_VERSIONS_TABLE).delete().in('song_id', deleteIds.slice(i, i + CHUNK));
+      if (error) throw error;
+    }
+    pendingChanges.clear();
+    updateSaveChangesButton();
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error', e);
+    alert('Save failed: ' + (e.message ?? e));
+    saveChangesBtn.disabled = false; // still have pending changes — allow retry
+  }
+}
+saveChangesBtn.addEventListener('click', flushPendingChanges);
+
+// Renames a group. Materializes (mints a group_id + rows for every current
+// member) the first time a pure-auto group is renamed. If another group
+// already has this exact name, merges into it instead of leaving two
+// identically-named-but-separate groups.
+function setGroupOverride(key, val) {
+  const name = val.trim();
+  const collision = renderedGroups.find(g => g.key !== key && resolvedKey(g.key).toLowerCase() === name.toLowerCase());
+  if (collision) { mergeGroupInto(key, collision.key); return; }
+
+  const { groupId, key: manualKey, rows } = localMaterialize(key);
+  overrides.groups[manualKey] = name;
+  applyStructureChange(manualKey);
+  rows.forEach(r => queueChange(r.song.id, {
+    group_id: groupId, version: overrides.songs[r.song.id] ?? null, version_title: name,
+  }));
+}
+
+// Fully un-curates a group: queues deletion of every song_versions row for
+// it, so every member reverts to pure automatic grouping AND labeling.
+function clearGroupOverride(key) {
+  const groupId = parseManualKey(key);
+  if (groupId === null) { delete overrides.groups[key]; return; }
+  const rows = groupsByKey.get(key)?.rows ?? [];
+  rows.forEach(r => {
+    delete overrides.moves[r.song.id];
+    delete overrides.songs[r.song.id];
+    queueChange(r.song.id, null);
+  });
+  delete overrides.groups[key];
+  applyStructureChange();
+}
+
+// Renames one song's label. Materializes its whole current bucket first (so
+// the rename doesn't split this song off from still-automatic siblings).
+function setSongOverride(songId, val, bucketKey) {
+  const { groupId, key: manualKey, rows } = localMaterialize(bucketKey);
+  overrides.songs[songId] = val;
+  applyStructureChange(manualKey);
+  const groupName = overrides.groups[manualKey] ?? manualKey;
+  rows.forEach(r => queueChange(r.song.id, {
+    group_id: groupId,
+    version: r.song.id === Number(songId) ? val : (overrides.songs[r.song.id] ?? null),
+    version_title: groupName,
+  }));
+}
+
+// Clears a song's label override only — keeps it in its manual group.
+function clearSongOverride(songId) {
+  delete overrides.songs[songId];
+  const manualKey = overrides.moves[songId];
+  const groupId = parseManualKey(manualKey);
+  if (groupId !== null) {
+    queueChange(songId, { group_id: groupId, version: null, version_title: overrides.groups[manualKey] ?? manualKey });
+  }
+}
+
+// Moves one song into `targetKey`, which may be an existing manual group, an
+// existing pure-auto group (materialized on the spot), or a brand-new name
+// typed in the picker.
+function setMoveOverride(songId, targetKey) {
+  let groupId, manualKey, rows;
+  const existing = parseManualKey(targetKey);
+  if (existing !== null) {
+    manualKey = targetKey; groupId = existing; rows = groupsByKey.get(targetKey)?.rows ?? [];
+  } else if (groupsByKey.has(targetKey)) {
+    ({ groupId, key: manualKey, rows } = localMaterialize(targetKey));
+  } else {
+    groupId = Number(songId);
+    manualKey = manualKeyFor(groupId);
+    overrides.groups[manualKey] = targetKey;
+    rows = [];
+  }
+
+  overrides.moves[songId] = manualKey;
+  applyStructureChange(manualKey);
+
+  const groupName = overrides.groups[manualKey] ?? manualKey;
+  const seen = new Set([Number(songId)]);
+  queueChange(songId, { group_id: groupId, version: overrides.songs[songId] ?? null, version_title: groupName });
+  rows.forEach(r => {
+    if (seen.has(r.song.id)) return;
+    seen.add(r.song.id);
+    queueChange(r.song.id, { group_id: groupId, version: overrides.songs[r.song.id] ?? null, version_title: groupName });
+  });
+}
+
+// Reverts a song fully back to automatic grouping AND labeling (queues its
+// row for deletion — there's no "manual group, auto label" state to fall
+// back to once the row is gone).
+function clearMoveOverride(songId) {
+  delete overrides.moves[songId];
+  delete overrides.songs[songId];
+  queueChange(songId, null);
+}
+
+// Merges every song currently in `sourceKey` into `targetKey` — batches the
+// materialization + queued writes into one pass instead of moving song-by-song.
+function mergeGroupInto(sourceKey, targetKey) {
+  const sourceRows = groupsByKey.get(sourceKey)?.rows ?? [];
+  if (!sourceRows.length) return;
+
+  let groupId, manualKey, targetRows;
+  const existing = parseManualKey(targetKey);
+  if (existing !== null) {
+    manualKey = targetKey; groupId = existing; targetRows = groupsByKey.get(targetKey)?.rows ?? [];
+  } else if (groupsByKey.has(targetKey)) {
+    ({ groupId, key: manualKey, rows: targetRows } = localMaterialize(targetKey));
+  } else {
+    groupId = Number(sourceRows[0].song.id);
+    manualKey = manualKeyFor(groupId);
+    overrides.groups[manualKey] = targetKey;
+    targetRows = [];
+  }
+
+  sourceRows.forEach(r => { overrides.moves[r.song.id] = manualKey; });
+  applyStructureChange(manualKey);
+
+  const groupName = overrides.groups[manualKey] ?? manualKey;
+  const seen = new Set();
+  for (const r of [...targetRows, ...sourceRows]) {
+    if (seen.has(r.song.id)) continue;
+    seen.add(r.song.id);
+    queueChange(r.song.id, { group_id: groupId, version: overrides.songs[r.song.id] ?? null, version_title: groupName });
+  }
+}
+
 function resolvedLabel(row) {
   return overrides.songs[row.song.id] ?? row.label;
 }
@@ -799,6 +1078,99 @@ document.getElementById('collapseAllBtn').addEventListener('click', () => {
   render(searchInput.value, { resetPaging: false });
 });
 
+function rowsForBulkSave(g) {
+  if (parseManualKey(g.key) !== null) return []; // already persisted
+  const groupId = Math.min(...g.rows.map(r => r.song.id));
+  const versionTitle = resolvedKey(g.key);
+  const isMultiVersion = g.rows.length > 1;
+  return g.rows.map(r => ({
+    song_id: r.song.id,
+    group_id: groupId,
+    version: isMultiVersion ? resolvedLabel(r) : null,
+    version_title: versionTitle,
+  }));
+}
+
+// ── Run Autogroup — the bracket/version-stripping heuristic only runs when
+// this is clicked. Songs that already have a song_versions row (manual
+// placement) are left untouched; everything else gets computed and staged
+// as a pending change, ready for review via "Save changes".
+const runAutogroupBtn = document.getElementById('runAutogroupBtn');
+runAutogroupBtn.addEventListener('click', () => {
+  if (autogroupHasRun) return;
+  autogroupHasRun = true;
+  rebuildGroups();
+  render(searchInput.value);
+
+  for (const g of renderedGroups) {
+    rowsForBulkSave(g).forEach(row => queueChange(row.song_id, {
+      group_id: row.group_id, version: row.version, version_title: row.version_title,
+    }));
+  }
+
+  runAutogroupBtn.disabled = true;
+  saveAllBtn.disabled = false;
+  saveAllBtn.title = 'Write every computed group to Supabase, not just manually-edited ones';
+});
+
+// ── Save all — persists the FULL computed grouping, not just groups the
+// user has manually touched. Only meaningful for groups that are still
+// pure-auto (a manually-touched group already has its rows); those are
+// skipped since they're already saved. Disabled until Run Autogroup has
+// been clicked, since before that everything is just its raw, ungrouped
+// title and there's nothing meaningful yet to bulk-save.
+const saveAllBtn = document.getElementById('saveAllBtn');
+const saveAllLabel = document.getElementById('saveAllLabel');
+
+saveAllBtn.addEventListener('click', async () => {
+  const allRows = renderedGroups.flatMap(rowsForBulkSave);
+  if (!allRows.length) {
+    alert('Everything is already saved — no pure-automatic groups left to persist.');
+    return;
+  }
+  const proceed = confirm(
+    `This writes ${allRows.length} songs across ${renderedGroups.filter(g => parseManualKey(g.key) === null).length} ` +
+    `not-yet-saved groups to Supabase (song_versions) as the persisted grouping. Continue?`
+  );
+  if (!proceed) return;
+
+  saveAllBtn.disabled = true;
+  const originalText = saveAllLabel.textContent;
+  setSyncStatus('saving');
+  const CHUNK = 500;
+  try {
+    for (let i = 0; i < allRows.length; i += CHUNK) {
+      const chunk = allRows.slice(i, i + CHUNK).map(r => ({ ...r, added_by: ADDED_BY }));
+      const { error } = await sb.from(SONG_VERSIONS_TABLE).upsert(chunk, { onConflict: 'song_id' });
+      if (error) throw error;
+      saveAllLabel.textContent = `Saving… (${Math.min(i + CHUNK, allRows.length)}/${allRows.length})`;
+    }
+
+    // Reflect locally so these groups are treated as manual from now on —
+    // no need to re-materialize the next time one of them is touched.
+    for (const g of renderedGroups) {
+      if (parseManualKey(g.key) !== null) continue;
+      const groupId = Math.min(...g.rows.map(r => r.song.id));
+      const manualKey = manualKeyFor(groupId);
+      const name = resolvedKey(g.key);
+      g.rows.forEach(r => {
+        overrides.moves[r.song.id] = manualKey;
+        const label = g.rows.length > 1 ? resolvedLabel(r) : undefined;
+        if (label !== undefined) overrides.songs[r.song.id] = label;
+      });
+      overrides.groups[manualKey] = name;
+    }
+    applyStructureChange();
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error', e);
+    alert('Save failed: ' + (e.message ?? e));
+  } finally {
+    saveAllBtn.disabled = false;
+    saveAllLabel.textContent = originalText;
+  }
+});
+
 function updateShowMore(total) {
   const remaining = total - visibleCount;
   if (remaining > 0) {
@@ -862,18 +1234,14 @@ groupsEl.addEventListener('click', (e) => {
     if (editBtn.dataset.edit === 'group') {
       const span = groupEl.querySelector('.group-name');
       startEdit(span, span.textContent, (val) => {
-        overrides.groups[key] = val;
-        persistOverrides();
-        refreshGroupElement(groupEl, key);
+        setGroupOverride(key, val); // handles its own re-render + keeps this group open
       });
     } else {
       const rowEl = editBtn.closest('.song-row');
       const songId = rowEl.dataset.songId;
       const span = rowEl.querySelector('.song-title');
       startEdit(span, span.textContent, (val) => {
-        overrides.songs[songId] = val;
-        persistOverrides();
-        refreshGroupElement(groupEl, key);
+        setSongOverride(songId, val, key); // handles its own re-render + keeps this group open
       });
     }
     return;
@@ -907,17 +1275,14 @@ groupsEl.addEventListener('click', (e) => {
     const groupEl = resetBtn.closest('.group');
     const key = groupEl.dataset.groupKey;
     if (resetBtn.dataset.reset === 'group') {
-      delete overrides.groups[key];
+      clearGroupOverride(key); // handles its own re-render
     } else if (resetBtn.dataset.reset === 'move') {
-      delete overrides.moves[resetBtn.closest('.song-row').dataset.songId];
-      persistOverrides();
+      clearMoveOverride(resetBtn.closest('.song-row').dataset.songId);
       applyStructureChange();   // song returns to its auto group — regroup + rerender
-      return;
     } else {
-      delete overrides.songs[resetBtn.closest('.song-row').dataset.songId];
+      clearSongOverride(resetBtn.closest('.song-row').dataset.songId);
+      refreshGroupElement(groupEl, key); // label-only change, same bucket
     }
-    persistOverrides();
-    refreshGroupElement(groupEl, key);
     return;
   }
 
@@ -974,7 +1339,13 @@ searchInput.addEventListener('input', () => {
 
 let allSongs = []; // raw catalog, kept so grouping can be rebuilt after a move/merge
 
-// Runs the full grouping pipeline over allSongs. Split out from load() so
+// The automatic bracket/version-stripping heuristic only runs after the user
+// explicitly clicks "Run Autogroup" — on load (and after any move/merge/
+// rename), songs with no song_versions row just show up as their own
+// standalone entry using their raw title. This flag gates that heuristic.
+let autogroupHasRun = false;
+
+// Runs the grouping pipeline over allSongs. Split out from load() so
 // structural changes (moving a song, merging groups) can recompute groups
 // without refetching the catalog.
 function rebuildGroups() {
@@ -987,12 +1358,17 @@ function rebuildGroups() {
   // whitespace-insensitive) so e.g. "Righteous" and "righteous " land in
   // the same bucket. baseDisplay remembers the first-seen original casing
   // to use as the visible group name.
+  //
+  // Skipped entirely until autogroupHasRun — before that, every song is
+  // just its own entry (see the `isVersionGroup` check below).
   const baseCounts = new Map();
   const baseDisplay = new Map();
-  for (const { info } of infos) {
-    if (!info.version) continue;
-    baseCounts.set(info.normBase, (baseCounts.get(info.normBase) ?? 0) + 1);
-    if (!baseDisplay.has(info.normBase)) baseDisplay.set(info.normBase, info.base);
+  if (autogroupHasRun) {
+    for (const { info } of infos) {
+      if (!info.version) continue;
+      baseCounts.set(info.normBase, (baseCounts.get(info.normBase) ?? 0) + 1);
+      if (!baseDisplay.has(info.normBase)) baseDisplay.set(info.normBase, info.base);
+    }
   }
 
   // Songs with no other version to group with get their own group, keyed
@@ -1002,7 +1378,7 @@ function rebuildGroups() {
   const titleDisplay = new Map();
   const groups = new Map();
   for (const { song, info } of infos) {
-    const isVersionGroup = !!info.version && baseCounts.get(info.normBase) > 1;
+    const isVersionGroup = autogroupHasRun && !!info.version && baseCounts.get(info.normBase) > 1;
     info.isVersionGroup = isVersionGroup;
 
     let groupKey;
@@ -1046,7 +1422,7 @@ function rebuildGroups() {
 
 async function load() {
   try {
-    const resp = await fetch('/api/songs/all');
+    const [resp] = await Promise.all([fetch('/api/songs/all'), initOverrides()]);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     allSongs = data.songs ?? [];
@@ -1093,12 +1469,21 @@ const pickerList    = document.getElementById('pickerList');
 
 let pickerCtx = null; // { mode: 'move'|'merge', songId?, groupKey?, label }
 
-// Regroup + full re-render after a structural change (move/merge/unmove).
-// Cheap enough to do wholesale — the grouping pipeline runs in ~tens of ms
-// and render() is paginated.
-function applyStructureChange() {
+// Regroup + full re-render after a structural change (move/merge/rename/
+// unmove). Cheap enough to do wholesale — the grouping pipeline runs in
+// ~tens of ms and render() is paginated. If `focusKey` is given (the group
+// the user was just working in), it's expanded again after the rebuild so
+// renaming/moving something doesn't collapse the group out from under you.
+function applyStructureChange(focusKey) {
   rebuildGroups();
   render(searchInput.value);
+  if (focusKey) {
+    const groupEl = groupsEl.querySelector(`.group[data-group-key="${CSS.escape(focusKey)}"]`);
+    if (groupEl) {
+      populateGroup(groupEl);
+      groupEl.classList.remove('collapsed');
+    }
+  }
 }
 
 function openPicker(ctx) {
@@ -1148,27 +1533,20 @@ function renderPickerList(query) {
 
 function pickTarget(targetKey) {
   if (!pickerCtx) return;
-  if (pickerCtx.mode === 'move') {
-    overrides.moves[pickerCtx.songId] = targetKey;
-  } else {
-    // Merge = manually place every song of the source group into the target.
-    // Recorded per-song so individual songs can still be un-moved later.
-    const g = groupsByKey.get(pickerCtx.groupKey);
-    if (g) g.rows.forEach(r => { overrides.moves[r.song.id] = targetKey; });
-    // Carry a custom name over: if the source group was renamed, keep the
-    // target's own name — the user picked the target deliberately.
-  }
-  persistOverrides();
+  const ctx = pickerCtx; // closePicker() nulls pickerCtx — read what we need first
   closePicker();
-  applyStructureChange();
+  if (ctx.mode === 'move') {
+    setMoveOverride(ctx.songId, targetKey); // handles its own re-render
+  } else {
+    mergeGroupInto(ctx.groupKey, targetKey); // handles its own re-render
+  }
 }
 
 pickerList.addEventListener('click', (e) => {
   const item = e.target.closest('.picker-item');
   if (!item) return;
   if (item.dataset.unmove) {
-    delete overrides.moves[pickerCtx.songId];
-    persistOverrides();
+    clearMoveOverride(pickerCtx.songId);
     closePicker();
     applyStructureChange();
     return;

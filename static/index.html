@@ -2216,6 +2216,14 @@ const OUR_KEYS = new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ']);
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (OUR_KEYS.has(e.key)) e.preventDefault();
+
+  if (e.key === 'Shift' && !e.repeat) {
+    autoFollow = !autoFollow;
+    resumeFollowBtn.classList.toggle('visible', !autoFollow);
+    if (autoFollow && activeLineIdx >= 0) applyHighlight(activeLineIdx, true, false);
+    return;
+  }
+
   if (!syncedLines.length) return;
 
   if (e.key === 'ArrowLeft' && e.ctrlKey) {

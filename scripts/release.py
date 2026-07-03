@@ -122,14 +122,16 @@ def confirm(prompt: str, auto_yes: bool, default_yes: bool = True) -> bool:
 # ---------------------------------------------------------------------------
 # git / process helpers
 # ---------------------------------------------------------------------------
-def run(cmd: list[str], cwd: Path | None = None, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
+def run(cmd: list[str], cwd: Path | None = None, check: bool = True, capture: bool = False,
+        env: dict | None = None) -> subprocess.CompletedProcess:
     # On Windows, things like npm/npx are .cmd shims that CreateProcess can't
     # launch directly without going through a shell.
     use_shell = sys.platform == "win32"
+    full_env = {**os.environ, **env} if env else None
     if capture:
-        result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, shell=use_shell)
+        result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, shell=use_shell, env=full_env)
     else:
-        result = subprocess.run(cmd, cwd=cwd, text=True, shell=use_shell)
+        result = subprocess.run(cmd, cwd=cwd, text=True, shell=use_shell, env=full_env)
     if check and result.returncode != 0:
         if capture:
             print(result.stdout)
@@ -256,7 +258,11 @@ def step_build(args, total: int, idx: int) -> tuple[str, Path]:
         run(["npm", "install"], cwd=ELECTRON_DIR)
 
     info("Running npm run dist (this can take a few minutes)...")
-    run(["npm", "run", "dist"], cwd=ELECTRON_DIR)
+    # We don't code-sign the installer, so skip electron-builder's automatic
+    # signing-certificate discovery: on Windows it otherwise downloads a
+    # cross-signing toolkit containing macOS symlinks that fail to extract
+    # without Developer Mode/admin (SeCreateSymbolicLinkPrivilege).
+    run(["npm", "run", "dist"], cwd=ELECTRON_DIR, env={"CSC_IDENTITY_AUTO_DISCOVERY": "false"})
 
     dist_dir = ELECTRON_DIR / "dist"
     installers = sorted(dist_dir.glob("*.exe"), key=lambda p: p.stat().st_mtime, reverse=True)

@@ -500,6 +500,35 @@
     align-self: center;
     white-space: nowrap;
   }
+  .lyrics-offset {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px 0 12px;
+    align-self: center;
+    flex-shrink: 0;
+  }
+  .lyrics-offset.visible { display: flex; }
+  .offset-btn {
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    font-size: .72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .offset-btn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
+  .offset-value {
+    font-size: .7rem;
+    color: var(--muted);
+    min-width: 44px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .offset-value.nonzero { color: var(--accent2); font-weight: 600; }
   .lyrics-body { padding: 20px; flex: 1; }
 
   /* Karaoke */
@@ -1264,6 +1293,11 @@
           <div class="lyrics-tabs">
             <button class="tab-btn active" data-tab="karaoke">Synced</button>
             <button class="tab-btn" data-tab="plain">Lyrics</button>
+            <div class="lyrics-offset" id="lyricsOffsetControl" title="Shift synced lyrics timing if they're out of sync with the audio">
+              <button class="offset-btn" id="offsetMinusBtn">−0.1s</button>
+              <span class="offset-value" id="offsetValue">0.0s</span>
+              <button class="offset-btn" id="offsetPlusBtn">+0.1s</button>
+            </div>
             <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;Ctrl+Space play</span>
           </div>
 
@@ -1417,6 +1451,7 @@ let lastVerifyResults = [];
 let autoFollow     = true;
 let _userScrolling = false; // set true on wheel/touch/pointer before scroll fires
 let localFilePath  = '';    // server-side path of uploaded local file (empty = API mode)
+let lyricsOffset   = 0;     // seconds; shifts synced-lyrics timing without touching syncedLines itself
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const searchInput      = document.getElementById('searchInput');
@@ -1445,6 +1480,10 @@ const plainLyricsView  = document.getElementById('plainLyricsView');
 const plainLyricsText  = document.getElementById('plainLyricsText');
 const lyricsSection    = document.getElementById('lyricsSection');
 const resumeFollowBtn  = document.getElementById('resumeFollowBtn');
+const lyricsOffsetControl = document.getElementById('lyricsOffsetControl');
+const offsetMinusBtn   = document.getElementById('offsetMinusBtn');
+const offsetPlusBtn    = document.getElementById('offsetPlusBtn');
+const offsetValueEl    = document.getElementById('offsetValue');
 const randomBtn        = document.getElementById('randomBtn');
 const randomFilterBtn  = document.getElementById('randomFilterBtn');
 const randomFilterPopover = document.getElementById('randomFilterPopover');
@@ -1876,9 +1915,13 @@ function renderKaraoke(lines) {
        <span class="kl-time" data-time-i="${i}" title="Click to adjust timing">${fmtTime(l.start)}</span>
      </div>`
   ).join('');
+  updateOffsetVisibility();
 }
 function setKaraokeDefault() {
   karaokeLines.innerHTML = '<span style="color:var(--muted);font-size:.88rem">Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.</span>';
+  lyricsOffset = 0;
+  updateOffsetDisplay();
+  updateOffsetVisibility();
 }
 function fmtTime(s) {
   const m = Math.floor(s / 60);
@@ -1895,18 +1938,45 @@ function applyHighlight(idx, scroll = true, instant = false) {
   }
 }
 
-audioPlayer.addEventListener('timeupdate', () => {
-  if (!syncedLines.length) return;
-  const t = audioPlayer.currentTime;
+function computeActiveIdx() {
+  const t = audioPlayer.currentTime - lyricsOffset;
   let idx = -1;
   for (let i = 0; i < syncedLines.length; i++) {
     if (syncedLines[i].start <= t) idx = i;
     else break;
   }
+  return idx;
+}
+
+audioPlayer.addEventListener('timeupdate', () => {
+  if (!syncedLines.length) return;
+  const idx = computeActiveIdx();
   if (idx === activeLineIdx) return;
   activeLineIdx = idx;
   if (pinnedIdx < 0) applyHighlight(idx);
 });
+
+// ── Lyrics offset (nudge synced-lyrics timing without re-syncing) ─────────
+function updateOffsetDisplay() {
+  offsetValueEl.textContent = `${lyricsOffset >= 0 ? '+' : ''}${lyricsOffset.toFixed(1)}s`;
+  offsetValueEl.classList.toggle('nonzero', lyricsOffset !== 0);
+}
+
+function updateOffsetVisibility() {
+  lyricsOffsetControl.classList.toggle('visible', syncedLines.length > 0);
+}
+
+function nudgeOffset(delta) {
+  if (!syncedLines.length) return;
+  lyricsOffset = Math.round((lyricsOffset + delta) * 10) / 10;
+  updateOffsetDisplay();
+  const idx = computeActiveIdx();
+  activeLineIdx = idx;
+  if (pinnedIdx < 0) applyHighlight(idx, true, false);
+}
+
+offsetMinusBtn.addEventListener('click', () => nudgeOffset(-0.1));
+offsetPlusBtn.addEventListener('click', () => nudgeOffset(0.1));
 
 // Click to seek / edit time chip
 karaokeLines.addEventListener('click', (e) => {

@@ -27,8 +27,3 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Electron
-electron/node_modules/
-electron/dist/
-electron/pyruntime/
-electron/pyruntime_tmp/

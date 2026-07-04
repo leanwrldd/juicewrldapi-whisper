@@ -234,20 +234,39 @@ def install_requirements() -> None:
     ok(f"Dependencies installed in {human_time(time.time() - t0)}.")
 
 
-def stop_existing_server() -> None:
+def _pids_listening_on(port: int) -> list[int]:
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"(Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"],
+        capture_output=True, text=True,
+    )
+    pids = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.isdigit():
+            pids.append(int(line))
+    return pids
+
+
+def stop_existing_server(port: int) -> None:
     step("Checking for an already-running server")
-    if platform.system() == "Windows":
-        result = subprocess.run(
-            ["taskkill", "/f", "/im", "uvicorn.exe"],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            ok("Stopped a previously running server.")
-        else:
-            ok("No existing server was running.")
-    else:
+    if platform.system() != "Windows":
         ok("Skipping (not Windows) — if a server is already running on the "
            "target port, starting a new one below will fail loudly.")
+        return
+
+    # Find whatever's actually bound to our port, rather than assuming it was
+    # launched as "uvicorn.exe" — we ourselves launch it as "python.exe -m
+    # uvicorn", which a name-based taskkill would never match.
+    pids = [p for p in _pids_listening_on(port) if p != os.getpid()]
+    if not pids:
+        ok("No existing server was running on this port.")
+        return
+
+    for pid in pids:
+        subprocess.run(["taskkill", "/f", "/pid", str(pid)], capture_output=True)
+    ok(f"Stopped {len(pids)} process(es) previously listening on port {port}.")
+    time.sleep(0.5)  # give the OS a moment to release the socket
 
 
 def wait_for_server(port: int, timeout: float = 60.0) -> bool:
@@ -278,7 +297,7 @@ def main() -> None:
 
     ensure_venv()
     install_requirements()
-    stop_existing_server()
+    stop_existing_server(args.port)
 
     step("Starting the server")
     url = f"http://127.0.0.1:{args.port}"

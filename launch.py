@@ -213,6 +213,58 @@ def _requirements_fingerprint() -> str:
     return hashlib.sha256(REQUIREMENTS.read_bytes()).hexdigest()
 
 
+def has_nvidia_gpu() -> bool:
+    try:
+        return subprocess.run(
+            ["nvidia-smi"], capture_output=True, timeout=5
+        ).returncode == 0
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def torch_cuda_build() -> str | None:
+    """The CUDA version torch reports (e.g. '12.8'), or None if torch isn't
+    installed yet or is a CPU-only wheel."""
+    result = subprocess.run(
+        [str(venv_python()), "-c", "import torch; print(torch.version.cuda or '')"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def ensure_gpu_torch() -> None:
+    """PyPI's default 'torch' wheel (pulled in transitively by openai-whisper)
+    is CPU-only. If there's an NVIDIA GPU, install the CUDA build instead —
+    before requirements.txt installs anything, so pip sees torch already
+    satisfied and doesn't downgrade it back to CPU."""
+    step("Checking for GPU acceleration")
+    if not venv_python().exists():
+        ok("Skipping (.venv not created yet).")
+        return
+    if not has_nvidia_gpu():
+        ok("No NVIDIA GPU detected — using CPU.")
+        return
+    build = torch_cuda_build()
+    if build:
+        ok(f"GPU-accelerated PyTorch already installed (CUDA {build}).")
+        return
+
+    warn("NVIDIA GPU detected — installing GPU-accelerated PyTorch instead of "
+         "the CPU-only default (one-time, larger download, several minutes)...")
+    t0 = time.time()
+    result = subprocess.run(
+        [str(venv_python()), "-m", "pip", "install", "torch", "torchaudio",
+         "--index-url", "https://download.pytorch.org/whl/cu128"],
+        cwd=ROOT,
+    )
+    if result.returncode != 0:
+        warn("GPU PyTorch install failed — continuing with CPU-only PyTorch.")
+        return
+    ok(f"GPU-accelerated PyTorch installed in {human_time(time.time() - t0)}.")
+
+
 def install_requirements() -> None:
     step("Checking Python dependencies")
     if requirements_satisfied():
@@ -296,6 +348,7 @@ def main() -> None:
     ensure_python_version()
 
     ensure_venv()
+    ensure_gpu_torch()
     install_requirements()
     stop_existing_server(args.port)
 

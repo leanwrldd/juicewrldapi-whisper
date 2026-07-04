@@ -22,7 +22,9 @@ uvicorn app:app --reload
 # 3. Open http://localhost:8000
 ```
 
-Or just run `python launch.py`, which does the setup + launch + browser-opening for you (same thing `start.bat` runs under the hood). Flags: `--port <n>`, `--no-browser`.
+Or just run `python launch.py`, which does the setup + launch + browser-opening for you (same thing `start.bat` runs under the hood). Flags: `--port <n>`, `--no-browser`, `--auto-update`, `--no-update-check`.
+
+If an NVIDIA GPU is detected, `launch.py` automatically installs the CUDA build of PyTorch instead of the CPU-only default — otherwise Whisper alignment falls back to (much slower) CPU.
 
 ## Usage
 

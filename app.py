@@ -721,10 +721,17 @@ app = FastAPI(title="WRLD Sync", lifespan=lifespan)
 # Helpers
 # ---------------------------------------------------------------------------
 async def jw_get(path: str, params: dict | None = None) -> dict:
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(BASE + path, params=params)
-        r.raise_for_status()
-        return r.json()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(BASE + path, params=params)
+            r.raise_for_status()
+            return r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(504, "juicewrldapi.com took too long to respond. Try again in a moment.")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"juicewrldapi.com returned an error ({e.response.status_code}).")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Couldn't reach juicewrldapi.com. Check your connection and try again.")
 
 
 # ---------------------------------------------------------------------------

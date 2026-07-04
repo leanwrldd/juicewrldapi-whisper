@@ -1697,7 +1697,7 @@ async function doSearch(q) {
       el.addEventListener('click', () => loadSong(Number(el.dataset.id)))
     );
   } catch (e) {
-    resultsHeaderText.textContent = 'Search failed';
+    resultsHeaderText.textContent = 'Search failed — try again';
   }
 }
 

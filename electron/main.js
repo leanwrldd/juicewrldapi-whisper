@@ -16,6 +16,10 @@ const pythonExe = isPackaged
 
 const appPyDir = resRoot; // app.py + static/ both live directly under resRoot in both modes
 
+const iconPath = isPackaged
+  ? path.join(resRoot, 'icon.png')
+  : path.join(__dirname, 'build', 'icon.png');
+
 let backendProc = null;
 let backendPort = null;
 let mainWindow = null;
@@ -94,6 +98,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     autoHideMenuBar: true,
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

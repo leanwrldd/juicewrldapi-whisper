@@ -1,11 +1,19 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 
-echo Stopping any existing server...
-taskkill /f /im uvicorn.exe >nul 2>&1
+where python >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   Python was not found on your PATH.
+    echo   Install Python 3.10+ from https://python.org/downloads/
+    echo   and make sure to check "Add python.exe to PATH" during setup.
+    echo.
+    pause
+    exit /b 1
+)
 
-echo Starting WRLD Sync...
-start "" http://localhost:8000
-.venv\Scripts\uvicorn.exe app:app
+python launch.py %*
 
+echo.
 pause

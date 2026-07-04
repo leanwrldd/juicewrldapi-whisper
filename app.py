@@ -311,6 +311,59 @@ async def _q_broadcast() -> None:
 
 # ── Shared whisper helpers ────────────────────────────────────────────────
 
+def _align(model_obj, tmp_path: str, lyrics: str):
+    # original_split=True keeps one output segment per input lyric line
+    # (rather than re-splitting by punctuation lyrics usually lack), which
+    # lets stable-ts's per-segment gap_padding actually line up with our
+    # real line boundaries and reduces its tendency to predict a line's
+    # start too early. nonspeech_skip lower than the 5s default catches the
+    # shorter pauses/breaths between song lines too, so word timestamps
+    # don't get stretched across them.
+    return model_obj.align(
+        tmp_path, lyrics, language="en",
+        original_split=True,
+        nonspeech_skip=1.0,
+    )
+
+
+def _lines_from_alignment(result, lyrics: str) -> list[dict]:
+    """Turn a stable-ts alignment/transcription result into {line, start, end} dicts."""
+    words: list[dict] = []
+    for seg in result.segments:
+        for w in (seg.words or []):
+            wt = w.word.strip()
+            if wt:
+                words.append({"word": wt, "start": round(w.start, 3), "end": round(w.end, 3)})
+    if not words:
+        for seg in result.segments:
+            words.append({"word": seg.text.strip(), "start": round(seg.start, 3), "end": round(seg.end, 3)})
+
+    lines: list[dict] = []
+    if lyrics and words:
+        lyric_lines = [l.strip() for l in lyrics.split("\n") if l.strip()]
+        if len(result.segments) == len(lyric_lines):
+            # original_split=True guarantees this 1:1 correspondence -- use the
+            # segment's own timing directly instead of the word-count slicing
+            # below, which can drift if naive whitespace-splitting doesn't
+            # match Whisper's own word boundaries (contractions, punctuation).
+            for line_text, seg in zip(lyric_lines, result.segments):
+                lines.append({"line": line_text, "start": round(seg.start, 3), "end": round(seg.end, 3)})
+        else:
+            ptr = 0
+            for line_text in lyric_lines:
+                n = len(line_text.split())
+                chunk = words[ptr:ptr + n]
+                if chunk:
+                    lines.append({"line": line_text, "start": chunk[0]["start"], "end": chunk[-1]["end"]})
+                ptr += n
+                if ptr >= len(words):
+                    break
+    else:
+        for seg in result.segments:
+            lines.append({"line": seg.text.strip(), "start": round(seg.start, 3), "end": round(seg.end, 3)})
+    return lines
+
+
 async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> list[dict]:
     """Run align/transcribe in executor. Returns lines."""
     label     = "Aligning" if lyrics else "Transcribing"
@@ -323,7 +376,7 @@ async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> l
         sys.stderr = _TeeStderr(spy, orig)
         try:
             if lyrics:
-                return model_obj.align(tmp_path, lyrics, language="en")
+                return _align(model_obj, tmp_path, lyrics)
             else:
                 return model_obj.transcribe(tmp_path, word_timestamps=True, verbose=False)
         finally:
@@ -361,36 +414,7 @@ async def _whisper_sync_worker(task: QueueTask, tmp_path: str, lyrics: str) -> l
     if cancelled:
         raise asyncio.CancelledError()
 
-    # Extract words
-    words: list[dict] = []
-    for seg in result.segments:
-        for w in (seg.words or []):
-            wt = w.word.strip()
-            if wt:
-                words.append({"word": wt, "start": round(w.start, 3), "end": round(w.end, 3)})
-    if not words:
-        for seg in result.segments:
-            words.append({"word": seg.text.strip(),
-                          "start": round(seg.start, 3), "end": round(seg.end, 3)})
-
-    # Group into lines
-    lines: list[dict] = []
-    if lyrics and words:
-        lyric_lines = [l.strip() for l in lyrics.split("\n") if l.strip()]
-        ptr = 0
-        for line_text in lyric_lines:
-            n = len(line_text.split())
-            chunk = words[ptr:ptr + n]
-            if chunk:
-                lines.append({"line": line_text, "start": chunk[0]["start"], "end": chunk[-1]["end"]})
-            ptr += n
-            if ptr >= len(words):
-                break
-    else:
-        for seg in result.segments:
-            lines.append({"line": seg.text.strip(),
-                          "start": round(seg.start, 3), "end": round(seg.end, 3)})
-    return lines
+    return _lines_from_alignment(result, lyrics)
 
 
 async def _whisper_verify_worker(task: QueueTask, tmp_path: str, lyrics: str) -> list[dict]:
@@ -1147,7 +1171,7 @@ async def sync_lyrics(req: SyncRequest):
                 sys.stderr = _TeeStderr(spy, orig)
                 try:
                     if lyrics:
-                        return model.align(tmp_path, lyrics, language="en")
+                        return _align(model, tmp_path, lyrics)
                     else:
                         return model.transcribe(tmp_path, word_timestamps=True, verbose=False)
                 finally:
@@ -1172,37 +1196,7 @@ async def sync_lyrics(req: SyncRequest):
                 elapsed += 1
 
             result = await fut
-
-            # Extract word timestamps
-            words = []
-            for seg in result.segments:
-                for w in (seg.words or []):
-                    wt = w.word.strip()
-                    if wt:
-                        words.append({"word": wt, "start": round(w.start, 3), "end": round(w.end, 3)})
-            if not words:
-                for seg in result.segments:
-                    words.append({"word": seg.text.strip(),
-                                  "start": round(seg.start, 3), "end": round(seg.end, 3)})
-
-            # Group into lines
-            lines = []
-            if lyrics and words:
-                lyric_lines = [l.strip() for l in lyrics.split("\n") if l.strip()]
-                ptr = 0
-                for line_text in lyric_lines:
-                    n = len(line_text.split())
-                    chunk = words[ptr:ptr + n]
-                    if chunk:
-                        lines.append({"line": line_text,
-                                      "start": chunk[0]["start"], "end": chunk[-1]["end"]})
-                    ptr += n
-                    if ptr >= len(words):
-                        break
-            else:
-                for seg in result.segments:
-                    lines.append({"line": seg.text.strip(),
-                                  "start": round(seg.start, 3), "end": round(seg.end, 3)})
+            lines = _lines_from_alignment(result, lyrics)
 
             yield sse({"stage": "done", "lines": lines})
 

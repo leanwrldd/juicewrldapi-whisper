@@ -118,6 +118,106 @@ def _git(args: list[str], timeout: float | None = None) -> subprocess.CompletedP
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
 
 
+GIT_REMOTE_URL = "https://github.com/leanwrldd/juicewrldapi-whisper.git"
+
+
+def has_git() -> bool:
+    return shutil.which("git") is not None
+
+
+def ensure_git() -> bool:
+    """Returns True if git is available (already installed, or freshly installed via winget)."""
+    if has_git():
+        return True
+    if platform.system() != "Windows":
+        warn("git not found. Install it with your OS package manager to enable auto-updates.")
+        return False
+    if not shutil.which("winget"):
+        warn("git not found, and winget isn't available to install it automatically. "
+             "Install Git for Windows manually: https://git-scm.com/download/win")
+        return False
+
+    warn("git not found — installing via winget (one-time)...")
+    t0 = time.time()
+    result = subprocess.run(
+        ["winget", "install", "--id", "Git.Git", "-e",
+         "--accept-package-agreements", "--accept-source-agreements"],
+    )
+    if result.returncode != 0:
+        warn("Automatic git install failed. Install it manually: https://git-scm.com/download/win")
+        return False
+
+    _refresh_path_from_registry()
+    if has_git():
+        ok(f"git installed in {human_time(time.time() - t0)}.")
+        return True
+    warn(f"git installed in {human_time(time.time() - t0)}, but not detected on PATH yet in this "
+         "window — restart this launcher once (a fresh terminal will have it).")
+    return False
+
+
+def _looks_like_this_project(path: Path) -> bool:
+    return (path / "app.py").exists() and (path / "requirements.txt").exists() and (path / "launch.py").exists()
+
+
+def offer_git_conversion(auto_yes: bool) -> None:
+    """If this folder isn't a git checkout but is clearly a copy of this
+    project (e.g. downloaded as a GitHub ZIP), offer to replace it with a
+    proper git clone in place so future runs can actually auto-update."""
+    if not _looks_like_this_project(ROOT):
+        return
+    if not ensure_git():
+        return
+
+    warn("This folder isn't a git checkout (likely downloaded as a ZIP), so it can never "
+         "auto-update as-is. It can be converted into a real git checkout in place.")
+    if not confirm("Convert this folder into a git checkout now?", auto_yes):
+        ok("Skipping — update checks will keep saying 'not a git checkout'.")
+        return
+
+    tmp_dir = ROOT.parent / f"{ROOT.name}__git_clone_tmp"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    step("Cloning a fresh git checkout")
+    t0 = time.time()
+    result = subprocess.run(["git", "clone", "--quiet", GIT_REMOTE_URL, str(tmp_dir)])
+    if result.returncode != 0:
+        warn("Clone failed — leaving the current folder untouched.")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return
+    ok(f"Cloned in {human_time(time.time() - t0)}.")
+
+    # Carry over local preferences that only exist on disk, not in git.
+    for name in (".env", ".model_pref", ".model_pref_align", ".model_pref_verify", ".device_pref"):
+        src = ROOT / name
+        if src.exists():
+            shutil.copy2(src, tmp_dir / name)
+
+    backup_dir = ROOT.parent / f"{ROOT.name}__pre-git-backup"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
+    try:
+        ROOT.rename(backup_dir)
+    except OSError as e:
+        warn(f"Couldn't move the old folder aside ({e}).")
+        ok(f"Your new git checkout is ready at: {tmp_dir} — run start.bat from there instead.")
+        sys.exit(0)
+
+    try:
+        tmp_dir.rename(ROOT)
+    except OSError as e:
+        backup_dir.rename(ROOT)  # put the original back, nothing lost
+        warn(f"Couldn't move the new clone into place ({e}) — restored the original folder. "
+             f"The git clone is still available at: {tmp_dir}")
+        return
+
+    ok(f"This folder is now a proper git checkout. The old copy is backed up at: {backup_dir}")
+    step("Restarting with the git checkout")
+    os.execv(sys.executable, [sys.executable, str(ROOT / "launch.py"), *sys.argv[1:]])
+
+
 def check_for_updates(auto_update: bool, skip: bool) -> None:
     step("Checking for updates")
     if skip:
@@ -126,6 +226,7 @@ def check_for_updates(auto_update: bool, skip: bool) -> None:
 
     if not (ROOT / ".git").exists():
         ok("Not a git checkout, skipping update check.")
+        offer_git_conversion(auto_update)
         return
 
     try:

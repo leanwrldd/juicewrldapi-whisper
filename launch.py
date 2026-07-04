@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -265,6 +266,69 @@ def ensure_gpu_torch() -> None:
     ok(f"GPU-accelerated PyTorch installed in {human_time(time.time() - t0)}.")
 
 
+def has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def _refresh_path_from_registry() -> None:
+    """Winget (and installers in general) update PATH in the registry, but an
+    already-running process keeps its own cached copy in os.environ -- pull
+    the current machine + user PATH values and merge them in, the same way
+    Windows would on a fresh process/shell without needing a full restart."""
+    if platform.system() != "Windows":
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                             r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment") as key:
+            system_path = winreg.QueryValueEx(key, "Path")[0]
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            user_path = winreg.QueryValueEx(key, "Path")[0]
+        os.environ["PATH"] = system_path + os.pathsep + user_path
+    except OSError:
+        pass  # best-effort; if this fails we just fall back to telling the user to restart
+
+
+def ensure_ffmpeg() -> None:
+    """Whisper shells out to ffmpeg to decode audio; without it, syncing fails
+    deep inside a background task with an opaque '[WinError 2] The system
+    cannot find the file specified' instead of a clear message here."""
+    step("Checking for ffmpeg")
+    if has_ffmpeg():
+        ok("ffmpeg found.")
+        return
+
+    if platform.system() != "Windows":
+        warn("ffmpeg not found on PATH — Whisper needs it to decode audio. "
+             "Install it with your OS package manager (e.g. 'brew install ffmpeg' on Mac).")
+        return
+
+    if not shutil.which("winget"):
+        warn("ffmpeg not found, and winget isn't available to install it automatically. "
+             "Install it manually: https://ffmpeg.org/download.html")
+        return
+
+    warn("ffmpeg not found — installing via winget (one-time)...")
+    t0 = time.time()
+    result = subprocess.run(
+        ["winget", "install", "--id", "Gyan.FFmpeg", "-e",
+         "--accept-package-agreements", "--accept-source-agreements"],
+    )
+    if result.returncode != 0:
+        warn("Automatic ffmpeg install failed. Install it manually with "
+             "'winget install ffmpeg' (or https://ffmpeg.org/download.html), "
+             "then restart this launcher.")
+        return
+
+    _refresh_path_from_registry()
+
+    if has_ffmpeg():
+        ok(f"ffmpeg installed in {human_time(time.time() - t0)}.")
+    else:
+        warn(f"ffmpeg installed in {human_time(time.time() - t0)}, but not detected on PATH "
+             "yet in this window — restart this launcher once (a fresh terminal will have it).")
+
+
 def install_requirements() -> None:
     step("Checking Python dependencies")
     if requirements_satisfied():
@@ -349,6 +413,7 @@ def main() -> None:
 
     ensure_venv()
     ensure_gpu_torch()
+    ensure_ffmpeg()
     install_requirements()
     stop_existing_server(args.port)
 

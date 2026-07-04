@@ -1572,6 +1572,10 @@ searchInput.addEventListener('input', () => {
   clearTimeout(searchTimer);
   const q = searchInput.value.trim();
   if (!q) { resultsList.innerHTML = ''; resultsHeaderText.textContent = 'Type to search'; return; }
+  if (mainEl.classList.contains('sidebar-collapsed')) {
+    mainEl.classList.remove('sidebar-collapsed');
+    localStorage.removeItem('jw_sidebar');
+  }
   searchTimer = setTimeout(() => doSearch(q), 380);
 });
 

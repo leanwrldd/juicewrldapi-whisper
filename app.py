@@ -657,8 +657,28 @@ async def _queue_processor() -> None:
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+def _log_startup_diagnostics() -> None:
+    print(f"[startup] Python: {sys.executable}")
+    print(f"[startup] Device preference: {DEVICE_PREF}")
+    try:
+        import torch
+        cuda_available = torch.cuda.is_available()
+        print(f"[startup] torch {torch.__version__} (CUDA build: {torch.version.cuda or 'none — CPU-only wheel'})")
+        print(f"[startup] torch.cuda.is_available(): {cuda_available}")
+        if cuda_available:
+            print(f"[startup] GPU: {torch.cuda.get_device_name(0)}")
+        elif DEVICE_PREF == "cuda":
+            print("[startup] Device preference is 'cuda' but CUDA isn't available from this "
+                  "interpreter — Whisper will fall back to CPU. If you expected GPU here, "
+                  "make sure the server was started via start.bat / launch.py so it's using "
+                  "the project's .venv (not some other Python on PATH).")
+    except Exception as e:
+        print(f"[startup] Could not inspect torch/CUDA: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _log_startup_diagnostics()
     global _q_cond
     _q_cond = asyncio.Condition()
     proc = asyncio.create_task(_queue_processor())

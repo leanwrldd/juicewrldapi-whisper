@@ -10,6 +10,8 @@ Usage:
     python launch.py
     python launch.py --port 8080
     python launch.py --no-browser
+    python launch.py --auto-update       # pull updates without asking
+    python launch.py --no-update-check   # skip the update check entirely
 """
 from __future__ import annotations
 
@@ -77,6 +79,17 @@ def fail(text: str) -> None:
     sys.exit(1)
 
 
+def confirm(prompt: str, default_yes: bool = True) -> bool:
+    suffix = "[Y/n]" if default_yes else "[y/N]"
+    try:
+        reply = input(f"  {paint('?', C.MAGENTA, C.BOLD)} {prompt} {suffix} ").strip().lower()
+    except (EOFError, OSError):
+        return default_yes
+    if not reply:
+        return default_yes
+    return reply in ("y", "yes")
+
+
 def human_time(seconds: float) -> str:
     seconds = int(seconds)
     if seconds < 60:
@@ -98,6 +111,76 @@ def ensure_python_version() -> None:
             "Install a newer Python from https://python.org/downloads/ and try again."
         )
     ok(f"Python {platform.python_version()}")
+
+
+def _git(args: list[str], timeout: float | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+
+
+def check_for_updates(auto_update: bool, skip: bool) -> None:
+    step("Checking for updates")
+    if skip:
+        ok("Skipped (--no-update-check).")
+        return
+
+    if not (ROOT / ".git").exists():
+        ok("Not a git checkout, skipping update check.")
+        return
+
+    try:
+        if subprocess.run(["git", "--version"], capture_output=True).returncode != 0:
+            warn("git not found on PATH, skipping update check.")
+            return
+    except FileNotFoundError:
+        warn("git not found on PATH, skipping update check.")
+        return
+
+    status = _git(["status", "--porcelain"])
+    if status.returncode != 0:
+        warn("Couldn't read git status, skipping update check.")
+        return
+    if status.stdout.strip():
+        warn("You have local changes — skipping auto-update to avoid conflicts.")
+        return
+
+    try:
+        fetch = _git(["fetch", "--quiet", "origin"], timeout=15)
+    except subprocess.TimeoutExpired:
+        warn("Timed out reaching GitHub — continuing with the current version.")
+        return
+    if fetch.returncode != 0:
+        warn("Couldn't reach GitHub to check for updates (offline?). Continuing with the current version.")
+        return
+
+    branch = _git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    local = _git(["rev-parse", "HEAD"]).stdout.strip()
+    remote_result = _git(["rev-parse", f"origin/{branch}"])
+    if remote_result.returncode != 0 or not remote_result.stdout.strip():
+        ok(f"No 'origin/{branch}' to compare against, skipping.")
+        return
+    remote = remote_result.stdout.strip()
+
+    if local == remote:
+        ok("You're up to date.")
+        return
+
+    behind = _git(["rev-list", "--count", f"{local}..{remote}"]).stdout.strip()
+    warn(f"Update available: {behind} new commit(s) on '{branch}'.")
+
+    do_pull = auto_update or confirm("Download and apply the update now?")
+    if not do_pull:
+        ok("Skipping update for this run.")
+        return
+
+    t0 = time.time()
+    pull = subprocess.run(["git", "pull", "--ff-only", "origin", branch], cwd=ROOT)
+    if pull.returncode != 0:
+        warn("git pull failed — continuing with the current version. You may need to update manually.")
+        return
+    ok(f"Updated in {human_time(time.time() - t0)}.")
+
+    step("Restarting with the updated code")
+    os.execv(sys.executable, [sys.executable, str(ROOT / "launch.py"), *sys.argv[1:]])
 
 
 def ensure_venv() -> None:
@@ -182,9 +265,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Set up and launch WRLD Sync.")
     parser.add_argument("--port", type=int, default=8000, help="Port to serve on (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Don't automatically open a browser tab")
+    parser.add_argument("--auto-update", action="store_true", help="Pull updates automatically without asking")
+    parser.add_argument("--no-update-check", action="store_true", help="Don't check for updates at all")
     args = parser.parse_args()
 
     print(paint("WRLD Sync launcher", C.BOLD, C.MAGENTA))
+
+    check_for_updates(auto_update=args.auto_update, skip=args.no_update_check)
 
     step("Checking Python")
     ensure_python_version()

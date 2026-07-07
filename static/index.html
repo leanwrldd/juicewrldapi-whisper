@@ -1987,8 +1987,10 @@ function setKaraokeDefault() {
   updateOffsetVisibility();
 }
 function fmtTime(s) {
+  const neg = s < 0;
+  s = Math.abs(s);
   const m = Math.floor(s / 60);
-  return `${m}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+  return `${neg ? '-' : ''}${m}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 }
 
 function applyHighlight(idx, scroll = true, instant = false) {

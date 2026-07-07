@@ -1502,7 +1502,7 @@ let lastVerifyResults = [];
 let autoFollow     = true;
 let _userScrolling = false; // set true on wheel/touch/pointer before scroll fires
 let localFilePath  = '';    // server-side path of uploaded local file (empty = API mode)
-let lyricsOffset   = 0;     // seconds; shifts synced-lyrics timing without touching syncedLines itself
+let offsetTotal    = 0;     // seconds; cumulative shift applied to all synced lines (display-only readout)
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const searchInput      = document.getElementById('searchInput');
@@ -1982,7 +1982,7 @@ function renderKaraoke(lines) {
 }
 function setKaraokeDefault() {
   karaokeLines.innerHTML = '<span style="color:var(--muted);font-size:.88rem">Hit "Sync" or "⚡ Auto" to generate timestamped lyrics.</span>';
-  lyricsOffset = 0;
+  offsetTotal = 0;
   updateOffsetDisplay();
   updateOffsetVisibility();
 }
@@ -2004,7 +2004,7 @@ function applyHighlight(idx, scroll = true, instant = false) {
 }
 
 function computeActiveIdx() {
-  const t = audioPlayer.currentTime - lyricsOffset;
+  const t = audioPlayer.currentTime;
   let idx = -1;
   for (let i = 0; i < syncedLines.length; i++) {
     if (syncedLines[i].start <= t) idx = i;
@@ -2023,8 +2023,8 @@ audioPlayer.addEventListener('timeupdate', () => {
 
 // ── Lyrics offset (nudge synced-lyrics timing without re-syncing) ─────────
 function updateOffsetDisplay() {
-  offsetValueEl.textContent = `${lyricsOffset >= 0 ? '+' : ''}${lyricsOffset.toFixed(1)}s`;
-  offsetValueEl.classList.toggle('nonzero', lyricsOffset !== 0);
+  offsetValueEl.textContent = `${offsetTotal >= 0 ? '+' : ''}${offsetTotal.toFixed(1)}s`;
+  offsetValueEl.classList.toggle('nonzero', offsetTotal !== 0);
 }
 
 function updateOffsetVisibility() {
@@ -2034,13 +2034,25 @@ function updateOffsetVisibility() {
 function refreshTimeChips() {
   karaokeLines.querySelectorAll('.kl-time').forEach((chip) => {
     const i = Number(chip.dataset.timeI);
-    if (!isNaN(i) && syncedLines[i]) chip.textContent = fmtTime(syncedLines[i].start + lyricsOffset);
+    if (!isNaN(i) && syncedLines[i]) chip.textContent = fmtTime(syncedLines[i].start);
   });
 }
 
+// Shift every synced line by delta seconds (destructive — rewrites start/end so
+// seeking, stamping and export all stay consistent). Negative shifts are clamped
+// so the earliest line never drops below 0, preserving the lines' relative spacing.
 function nudgeOffset(delta) {
   if (!syncedLines.length) return;
-  lyricsOffset = Math.round((lyricsOffset + delta) * 10) / 10;
+  if (delta < 0) {
+    const minStart = Math.min(...syncedLines.map(l => l.start ?? 0));
+    delta = Math.max(delta, -minStart);
+  }
+  if (delta === 0) return;
+  syncedLines.forEach((l) => {
+    l.start = Math.round(((l.start ?? 0) + delta) * 1000) / 1000;
+    if (typeof l.end === 'number') l.end = Math.round((l.end + delta) * 1000) / 1000;
+  });
+  offsetTotal = Math.round((offsetTotal + delta) * 10) / 10;
   updateOffsetDisplay();
   refreshTimeChips();
   const idx = computeActiveIdx();
@@ -2100,21 +2112,21 @@ function editTime(chip, idx) {
   const original = syncedLines[idx].start;
   const input = document.createElement('input');
   input.type = 'number'; input.step = '0.1'; input.min = '0';
-  input.value = (original + lyricsOffset).toFixed(1); input.className = 'kl-time-input';
+  input.value = original.toFixed(1); input.className = 'kl-time-input';
   chip.replaceWith(input); input.focus(); input.select();
   const confirm = () => {
     const val = parseFloat(input.value);
-    if (!isNaN(val) && val >= 0) syncedLines[idx].start = Math.round((val - lyricsOffset) * 1000) / 1000;
+    if (!isNaN(val) && val >= 0) syncedLines[idx].start = Math.round(val * 1000) / 1000;
     const newChip = document.createElement('span');
     newChip.className = 'kl-time'; newChip.dataset.timeI = String(idx);
     newChip.title = 'Click to adjust timing';
-    newChip.textContent = fmtTime(syncedLines[idx].start + lyricsOffset);
+    newChip.textContent = fmtTime(syncedLines[idx].start);
     input.replaceWith(newChip);
   };
   input.addEventListener('blur', confirm);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { syncedLines[idx].start = original; input.value = (original + lyricsOffset).toFixed(1); input.blur(); }
+    if (e.key === 'Escape') { syncedLines[idx].start = original; input.value = original.toFixed(1); input.blur(); }
   });
 }
 

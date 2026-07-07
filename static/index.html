@@ -2029,10 +2029,18 @@ function updateOffsetVisibility() {
   lyricsOffsetControl.classList.toggle('visible', syncedLines.length > 0);
 }
 
+function refreshTimeChips() {
+  karaokeLines.querySelectorAll('.kl-time').forEach((chip) => {
+    const i = Number(chip.dataset.timeI);
+    if (!isNaN(i) && syncedLines[i]) chip.textContent = fmtTime(syncedLines[i].start + lyricsOffset);
+  });
+}
+
 function nudgeOffset(delta) {
   if (!syncedLines.length) return;
   lyricsOffset = Math.round((lyricsOffset + delta) * 10) / 10;
   updateOffsetDisplay();
+  refreshTimeChips();
   const idx = computeActiveIdx();
   activeLineIdx = idx;
   if (pinnedIdx < 0) applyHighlight(idx, true, false);
@@ -2090,21 +2098,21 @@ function editTime(chip, idx) {
   const original = syncedLines[idx].start;
   const input = document.createElement('input');
   input.type = 'number'; input.step = '0.1'; input.min = '0';
-  input.value = original.toFixed(1); input.className = 'kl-time-input';
+  input.value = (original + lyricsOffset).toFixed(1); input.className = 'kl-time-input';
   chip.replaceWith(input); input.focus(); input.select();
   const confirm = () => {
     const val = parseFloat(input.value);
-    if (!isNaN(val) && val >= 0) syncedLines[idx].start = Math.round(val * 1000) / 1000;
+    if (!isNaN(val) && val >= 0) syncedLines[idx].start = Math.round((val - lyricsOffset) * 1000) / 1000;
     const newChip = document.createElement('span');
     newChip.className = 'kl-time'; newChip.dataset.timeI = String(idx);
     newChip.title = 'Click to adjust timing';
-    newChip.textContent = fmtTime(syncedLines[idx].start);
+    newChip.textContent = fmtTime(syncedLines[idx].start + lyricsOffset);
     input.replaceWith(newChip);
   };
   input.addEventListener('blur', confirm);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { syncedLines[idx].start = original; input.value = original.toFixed(1); input.blur(); }
+    if (e.key === 'Escape') { syncedLines[idx].start = original; input.value = (original + lyricsOffset).toFixed(1); input.blur(); }
   });
 }
 

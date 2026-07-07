@@ -2394,11 +2394,15 @@ document.addEventListener('keydown', (e) => {
     pinnedIdx = Math.min(syncedLines.length - 1, base + 1); applyHighlight(pinnedIdx, true, true);
   } else if (e.key === 'ArrowLeft') {
     pinnedIdx = -1;
-    audioPlayer.currentTime = syncedLines[Math.max(0, activeLineIdx - 1)].start;
+    activeLineIdx = Math.max(0, activeLineIdx - 1);
+    audioPlayer.currentTime = syncedLines[activeLineIdx].start;
+    applyHighlight(activeLineIdx, true, false);
     if (audioPlayer.paused) audioPlayer.play();
   } else if (e.key === 'ArrowRight') {
     pinnedIdx = -1;
-    audioPlayer.currentTime = syncedLines[Math.min(syncedLines.length - 1, activeLineIdx + 1)].start;
+    activeLineIdx = Math.min(syncedLines.length - 1, activeLineIdx + 1);
+    audioPlayer.currentTime = syncedLines[activeLineIdx].start;
+    applyHighlight(activeLineIdx, true, false);
     if (audioPlayer.paused) audioPlayer.play();
   } else if (e.key === 'ArrowUp') {
     audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 1);

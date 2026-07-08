@@ -37,7 +37,7 @@ If an NVIDIA GPU is detected, `launch.py` automatically installs the CUDA build 
 
 A separate tools page (linked from the main header) for maintaining the song database:
 
-- **Autogroup** — groups songs by title with version tags stripped (e.g. `Can't Die (v3)` → `Can't Die`), so different versions of the same song sit together. Supports manual renaming, merging groups, and moving songs between groups, with changes saved to Supabase.
+- **Autogroup** — groups songs by title with version tags stripped (e.g. `Can't Die (v3)` → `Can't Die`), so different versions of the same song sit together. Supports manual renaming, merging groups, and moving songs between groups, with changes saved via the juicewrldapi.com `/versions/` route.
 
 ## Config
 

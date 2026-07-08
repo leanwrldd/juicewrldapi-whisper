@@ -763,6 +763,56 @@ async def get_all_songs():
     return {"songs": songs}
 
 
+@app.get("/api/versions/{song_id}")
+async def get_versions(song_id: int):
+    """Version/grouping rows for a song (and its group-mates), if any."""
+    return await jw_get(f"/versions/{song_id}/")
+
+
+class VersionSaveRequest(BaseModel):
+    token: str
+    group_id: int
+    version: str | None = None
+    version_title: str | None = None
+
+
+async def _write_version(song_id: int, req: VersionSaveRequest, method: str):
+    if not req.token:
+        raise HTTPException(401, "No auth token provided.")
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        r = await client.request(
+            method,
+            BASE + f"/versions/{song_id}/",
+            headers={
+                "Authorization": f"Token {req.token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "group_id": req.group_id,
+                "version": req.version,
+                "version_title": req.version_title,
+            },
+        )
+        body = r.text
+        if r.status_code in (401, 403):
+            raise HTTPException(403, "Token rejected — editor role required.")
+        if not r.is_success:
+            raise HTTPException(r.status_code, f"API error {r.status_code}: {body}")
+        return r.json()
+
+
+@app.post("/api/versions/{song_id}")
+async def create_version(song_id: int, req: VersionSaveRequest):
+    """First-time save for a song that has no version row yet."""
+    return await _write_version(song_id, req, "POST")
+
+
+@app.patch("/api/versions/{song_id}")
+async def update_version(song_id: int, req: VersionSaveRequest):
+    """Update of a song's existing version row."""
+    return await _write_version(song_id, req, "PATCH")
+
+
 @app.get("/api/model")
 async def get_model_info():
     import torch

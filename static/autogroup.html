@@ -730,8 +730,12 @@ function categoryLabel(category) {
 }
 
 // Ensures no two rows within the same group show an identical label.
-// Duplicates are first disambiguated by era (if they differ); anything still
-// tied after that gets numbered "Alternate" / "Alternate 2" / ...
+// Duplicates are first disambiguated by era (if they differ), then by
+// category (if the first-listed member's category differs from a later
+// one's — e.g. the same "Remix v2" text existing as both an unreleased leak
+// and a studio session recording is really two different things wearing the
+// same version label). Anything still tied after that gets numbered
+// "Alternate" / "Alternate 2" / ... as a last resort.
 function dedupeLabels(rows) {
   const byLabel = new Map();
   rows.forEach(r => {
@@ -763,8 +767,13 @@ function dedupeLabels(rows) {
       if (members.length < 2) continue;
       members.forEach((r, i) => {
         if (i === 0) return;
-        const suffix = i === 1 ? 'Alternate' : `Alternate ${i}`;
-        r.label = `${suffix} ${lbl}`;
+        if (r.song.category && r.song.category !== members[0].song.category) {
+          r.label = categoryLabel(r.song.category);
+          r.isFallback = true;
+        } else {
+          const suffix = i === 1 ? 'Alternate' : `Alternate ${i}`;
+          r.label = `${suffix} ${lbl}`;
+        }
       });
     }
   }
@@ -776,6 +785,15 @@ function dedupeLabels(rows) {
 // "with Future" between the first two, but that's enough: it's redundant
 // for those two (their "v1"/"v3" alone is still distinguishing), while "v2"
 // is left untouched since none of its words repeat elsewhere.
+//
+// A bare version number ("v1", "v2", ...) is never stripped, even if it
+// repeats across rows — it's the one token that's still meaningful on its
+// own. If two rows end up sharing the exact same residual (e.g. two "v2"s
+// that turn out to be an unreleased leak and a separate session recording),
+// that's a real duplicate for dedupeLabels() below to disambiguate (by era,
+// then category, then an "Alternate" suffix as a last resort) rather than a
+// sign that the word should've been dropped.
+const VERSION_TOKEN_RE = /^v\d+[a-z]?$/i;
 function stripCommonWords(rows) {
   // Fallback rows already show resolved category text (not a version
   // fragment) — leave them out of the "what repeats elsewhere" check.
@@ -787,19 +805,9 @@ function stripCommonWords(rows) {
   wordSets.forEach(set => set.forEach(w => freq.set(w, (freq.get(w) ?? 0) + 1)));
 
   candidates.forEach(r => {
-    const kept = r.label.split(/\s+/).filter(Boolean).filter(w => (freq.get(w.toLowerCase()) ?? 0) < 2);
-    const newLabel = kept.join(' ').trim();
-    // If EVERY word in this label also shows up elsewhere, stripping would
-    // erase it completely — that's not "this word is redundant", it means
-    // the words just happen to be reused across an unrelated sub-cluster
-    // (e.g. "v1"/"v2"/"v3" repeating between a plain version and a "with
-    // Justin Bieber" version). Falling back to the category in that case
-    // destroys real distinguishing info for the whole group at once. Leave
-    // the label untouched instead; dedupeLabels() below already knows how
-    // to disambiguate two rows that end up identical (era suffix, then
-    // "Alternate N"), which is a much better outcome than every row in the
-    // group collapsing to the same bare category text.
-    if (newLabel) r.label = newLabel;
+    const kept = r.label.split(/\s+/).filter(Boolean)
+      .filter(w => VERSION_TOKEN_RE.test(w) || (freq.get(w.toLowerCase()) ?? 0) < 2);
+    r.label = kept.join(' ').trim();
   });
 }
 

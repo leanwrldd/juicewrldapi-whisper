@@ -189,6 +189,12 @@
   .save-changes-btn.has-pending:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent2); }
   /* Destructive action — distinct red tint instead of the usual purple hover */
   #discardChangesBtn:hover:not(:disabled) { color: #fca5a5; border-color: rgba(239,68,68,.4); background: var(--danger-soft); }
+  #pendingOnlyBtn.active {
+    color: #fff;
+    border-color: var(--accent2);
+    background: var(--accent2);
+  }
+  #pendingOnlyBtn.active:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent2); }
 
   main {
     flex: 1;
@@ -553,6 +559,12 @@
     </svg>
     <input id="searchInput" type="text" placeholder="Find a song's group…" autocomplete="off" />
   </div>
+  <button id="pendingOnlyBtn" class="back-btn" title="Show only groups with unsaved changes">
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/>
+    </svg>
+    <span id="pendingOnlyLabel">Pending only</span>
+  </button>
   <button id="loadSongsBtn" class="back-btn" title="Fetch every song that doesn't already have a saved version — songs with a version load automatically">
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -800,6 +812,8 @@ function stripCommonWords(rows) {
   const candidates = rows.filter(r => !r.isFallback);
   if (candidates.length < 2) return;
 
+  const original = new Map(candidates.map(r => [r, r.label]));
+
   const wordSets = candidates.map(r => new Set(r.label.split(/\s+/).filter(Boolean).map(w => w.toLowerCase())));
   const freq = new Map();
   wordSets.forEach(set => set.forEach(w => freq.set(w, (freq.get(w) ?? 0) + 1)));
@@ -809,6 +823,26 @@ function stripCommonWords(rows) {
       .filter(w => VERSION_TOKEN_RE.test(w) || (freq.get(w.toLowerCase()) ?? 0) < 2);
     r.label = kept.join(' ').trim();
   });
+
+  // Stripping only checks each word in isolation, so it can accidentally
+  // erase a row's *only* distinguishing detail just because that detail
+  // happens to be shared with one other row — e.g. "with Lil Uzi Vert v1"
+  // and "with Lil Uzi Vert v2" both lose "with Lil Uzi Vert" (shared by
+  // exactly those two), leaving bare "v1"/"v2" that then collide with
+  // actually-bare "v1"/"v2" rows elsewhere in the same group. That's not a
+  // real duplicate, it's the strip erasing the one thing that made these
+  // rows different — undo it for any collision group whose members didn't
+  // already share the exact same label before stripping.
+  const byStripped = new Map();
+  candidates.forEach(r => {
+    if (!byStripped.has(r.label)) byStripped.set(r.label, []);
+    byStripped.get(r.label).push(r);
+  });
+  for (const members of byStripped.values()) {
+    if (members.length < 2) continue;
+    const allSameOriginally = members.every(r => original.get(r) === original.get(members[0]));
+    if (!allSameOriginally) members.forEach(r => { r.label = original.get(r); });
+  }
 }
 
 // Builds the final { song, label, isFallback } rows for one group. This is
@@ -1066,7 +1100,10 @@ async function flushPendingChanges() {
     pendingChanges.delete(songId);
   }, 6, (done, total) => { saveChangesLabel.textContent = `Saving… (${done}/${total})`; });
   updateSaveChangesButton();
-  refreshVisibleGroupShells(); // drop now-stale per-group save indicators
+  // Pending-only filter needs groups removed from the list entirely once
+  // saved, not just their per-group indicator refreshed in place.
+  if (pendingOnlyFilter) render(searchInput.value, { resetPaging: false });
+  else refreshVisibleGroupShells(); // drop now-stale per-group save indicators
   if (failed) {
     setSyncStatus('error', { message: `${failed} change(s) failed to save` });
     alert(`${failed} change(s) failed to save. They remain queued — try again.`);
@@ -1416,20 +1453,32 @@ const expandedKeys = new Set();
 
 const showMoreBtn = document.getElementById('showMoreBtn');
 
+// When on, render() only shows groups containing at least one song with a
+// queued-but-unsaved change (see `pendingChanges` below) — lets you review
+// exactly what Run Autogroup staged before committing to Save changes.
+let pendingOnlyFilter = false;
+function groupHasPending(g) {
+  return g.rows.some(r => pendingChanges.has(r.song.id));
+}
+
 function render(query, { resetPaging = true } = {}) {
   const q = query.trim().toLowerCase();
   if (resetPaging) visibleCount = PAGE_SIZE;
 
+  const base = pendingOnlyFilter ? renderedGroups.filter(groupHasPending) : renderedGroups;
+
   if (!q) {
-    currentMatched = null;
-    const slice = renderedGroups.slice(0, visibleCount);
+    currentMatched = pendingOnlyFilter ? base : null;
+    const slice = base.slice(0, visibleCount);
     groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, '', expandedKeys.has(g.key))).join('');
-    statusEl.textContent = `${totalSongsCount} songs in ${renderedGroups.length} groups`;
-    updateShowMore(renderedGroups.length);
+    statusEl.textContent = pendingOnlyFilter
+      ? `${base.length} group${base.length !== 1 ? 's' : ''} with unsaved changes`
+      : `${totalSongsCount} songs in ${renderedGroups.length} groups`;
+    updateShowMore(base.length);
   } else {
     const matched = [];
     let matchCount = 0;
-    for (const g of renderedGroups) {
+    for (const g of base) {
       const keyMatches = resolvedKey(g.key).toLowerCase().includes(q);
       const rowMatchCount = g.rows.filter(r => rowMatches(r, q)).length;
       if (!keyMatches && !rowMatchCount) continue;
@@ -1732,6 +1781,13 @@ function startEdit(span, currentValue, onSave) {
 }
 
 let searchTimer = null;
+const pendingOnlyBtn = document.getElementById('pendingOnlyBtn');
+pendingOnlyBtn.addEventListener('click', () => {
+  pendingOnlyFilter = !pendingOnlyFilter;
+  pendingOnlyBtn.classList.toggle('active', pendingOnlyFilter);
+  render(searchInput.value);
+});
+
 searchInput.addEventListener('input', () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => render(searchInput.value), 120);
@@ -1827,11 +1883,32 @@ function rebuildGroups(ignoreOverrides = false) {
     const parsed = entries.map(e => parseFeat(e.info.version));
     const featCounts = new Map();
     parsed.forEach(p => { if (p) featCounts.set(p.featText, (featCounts.get(p.featText) ?? 0) + 1); });
+
+    // Stripping the feat clause can accidentally collide a "feat. X vN" row
+    // with an unrelated row that was already bare "vN" on its own (or with
+    // a different feat) — that's not a real duplicate, it's erasing the one
+    // thing that made the row distinct. Compute the tentative stripped
+    // label for every entry first, group by it, and only actually apply the
+    // strip where every member of the resulting group already shared the
+    // exact same raw version text (a genuine duplicate, not one manufactured
+    // by this stripping).
+    const tentative = entries.map((e, i) => {
+      const p = parsed[i];
+      return (p && featCounts.get(p.featText) > 1)
+        ? [p.prefix, p.verSuffix].filter(Boolean).join(' ').trim()
+        : e.info.version;
+    });
+    const byTentative = new Map();
+    tentative.forEach((label, i) => {
+      if (!byTentative.has(label)) byTentative.set(label, []);
+      byTentative.get(label).push(i);
+    });
     entries.forEach((e, i) => {
       const p = parsed[i];
-      if (p && featCounts.get(p.featText) > 1) {
-        e.info.displayLabel = [p.prefix, p.verSuffix].filter(Boolean).join(' ').trim();
-      }
+      if (!p || featCounts.get(p.featText) <= 1) return;
+      const group = byTentative.get(tentative[i]);
+      const allSameRaw = group.every(j => entries[j].info.version === entries[i].info.version);
+      if (allSameRaw) e.info.displayLabel = tentative[i];
     });
   }
 
@@ -1957,6 +2034,8 @@ async function loadAllVersions() {
       totalSongsCount = allSongs.length;
       rebuildGroups();
       render(searchInput.value); // sets statusEl to the final "N songs in M groups" text
+      runAutogroupBtn.disabled = autogroupHasRun;
+      runAutogroupBtn.title = autogroupHasRun ? '' : 'Regroup every song from scratch, including already-saved groups — stages the result for review, does not save until you click Save changes';
     }
     setSyncStatus('ok');
   } catch (e) {

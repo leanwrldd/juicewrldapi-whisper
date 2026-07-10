@@ -187,6 +187,8 @@
     box-shadow: 0 2px 12px rgba(124,58,237,.35);
   }
   .save-changes-btn.has-pending:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent2); }
+  /* Destructive action — distinct red tint instead of the usual purple hover */
+  #discardChangesBtn:hover:not(:disabled) { color: #fca5a5; border-color: rgba(239,68,68,.4); background: var(--danger-soft); }
 
   main {
     flex: 1;
@@ -249,6 +251,17 @@
   }
   .group.collapsed .group-header svg { transform: rotate(-90deg); }
   .group-name { font-size: .87rem; font-weight: 700; letter-spacing: -.005em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group.has-pending { box-shadow: inset 3px 0 0 var(--accent2); }
+  .group.has-pending .group-header { background: var(--accent-soft); }
+  .group.has-pending .group-header:hover { background: rgba(168, 85, 247, .2); }
+  .pending-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent2);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
   .group-count {
     font-size: .67rem;
     font-weight: 700;
@@ -561,6 +574,12 @@
     <span id="runAutogroupLabel">Run Autogroup</span>
   </button>
   <span class="header-divider"></span>
+  <button id="discardChangesBtn" class="back-btn" title="Discard all unsaved changes and revert to last saved state" disabled>
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+    </svg>
+    <span id="discardChangesLabel">Discard changes</span>
+  </button>
   <button id="saveChangesBtn" class="back-btn save-changes-btn" title="Push your renames/moves/merges to the API" disabled>
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <polyline points="20 6 9 17 4 12"/>
@@ -1010,6 +1029,8 @@ function localMaterialize(key) {
 const pendingChanges = new Map();
 const saveChangesBtn = document.getElementById('saveChangesBtn');
 const saveChangesLabel = document.getElementById('saveChangesLabel');
+const discardChangesBtn = document.getElementById('discardChangesBtn');
+const discardChangesLabel = document.getElementById('discardChangesLabel');
 
 function queueChange(songId, row) {
   pendingChanges.set(Number(songId), row);
@@ -1020,6 +1041,8 @@ function updateSaveChangesButton() {
   saveChangesLabel.textContent = n ? `Save changes (${n})` : 'Save changes';
   saveChangesBtn.classList.toggle('has-pending', n > 0);
   saveChangesBtn.disabled = n === 0;
+  discardChangesLabel.textContent = n ? `Discard changes (${n})` : 'Discard changes';
+  discardChangesBtn.disabled = n === 0;
 }
 window.addEventListener('beforeunload', (e) => {
   if (pendingChanges.size > 0) { e.preventDefault(); e.returnValue = ''; }
@@ -1045,6 +1068,53 @@ async function flushPendingChanges() {
   }
 }
 saveChangesBtn.addEventListener('click', flushPendingChanges);
+
+// Reverts every queued-but-unsaved change back to whatever's actually
+// persisted (or pure automatic, if it was never saved at all) — the
+// opposite of Save changes. Since edits mutate `overrides` immediately
+// (not just `pendingChanges`), simply clearing the queue would leave the
+// UI still showing the staged renames/regroupings; this re-resolves each
+// affected song from the server so the view genuinely reverts too.
+async function discardPendingChanges() {
+  if (!pendingChanges.size) return;
+  const proceed = confirm(`Discard ${pendingChanges.size} unsaved change(s)? This reverts them to their last saved state.`);
+  if (!proceed) return;
+
+  discardChangesBtn.disabled = true;
+  setSyncStatus('saving');
+  const songIds = [...pendingChanges.keys()];
+  pendingChanges.clear();
+  updateSaveChangesButton();
+
+  for (const songId of songIds) {
+    delete overrides.moves[songId];
+    delete overrides.songs[songId];
+    resolvedSongIds.delete(songId);
+  }
+
+  // Re-fetch each affected song's real state from the server, if any — this
+  // restores a genuine prior saved grouping instead of just falling back to
+  // pure-automatic for songs that actually had one.
+  await runWithConcurrency(songIds, async (songId) => {
+    const rows = await fetchVersionRows(songId);
+    applyVersionRows(rows);
+    resolvedSongIds.add(songId);
+  }, 8);
+
+  // A full discard likely undoes most/all of what Run Autogroup staged —
+  // let it be run again rather than leaving it permanently disabled.
+  autogroupHasRun = false;
+  if (allSongs.length) {
+    runAutogroupBtn.disabled = false;
+    runAutogroupBtn.title = 'Regroup every song from scratch, including already-saved groups — stages the result for review, does not save until you click Save changes';
+  }
+
+  rebuildGroups();
+  render(searchInput.value);
+  setSyncStatus('ok');
+  discardChangesBtn.disabled = false;
+}
+discardChangesBtn.addEventListener('click', discardPendingChanges);
 
 // Re-renders every group shell currently in the DOM (bounded by pagination,
 // so cheap) — used after a save touches songs across many groups at once,
@@ -1291,10 +1361,11 @@ function renderGroupShell(key, rows, q, expanded) {
   const isKeyOverridden = overrides.groups[key] !== undefined;
   const hasPending = rows.some(r => pendingChanges.has(r.song.id));
   const body = expanded ? groupBodyHTML(rows, q) : '';
-  return `<div class="group${expanded ? '' : ' collapsed'}" data-group-key="${esc(key)}"${expanded ? ' data-populated="1"' : ''}>
+  return `<div class="group${expanded ? '' : ' collapsed'}${hasPending ? ' has-pending' : ''}" data-group-key="${esc(key)}"${expanded ? ' data-populated="1"' : ''}>
     <div class="group-header">
       <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
       <span class="group-name">${highlight(displayKey, q)}</span>
+      ${hasPending ? '<span class="pending-dot" title="Unsaved changes"></span>' : ''}
       <button class="edit-btn" data-edit="group" title="Rename this group">${PENCIL_SVG}</button>
       ${isKeyOverridden ? `<button class="reset-btn" data-reset="group" title="Reset to automatic name">${RESET_SVG}</button>` : ''}
       <button class="merge-btn" title="Merge this group into another">${MERGE_SVG}</button>
@@ -1324,7 +1395,16 @@ let totalSongsCount = 0;
 const PAGE_SIZE = 200;
 let visibleCount = PAGE_SIZE;   // pagination cursor
 let currentMatched = null;      // matched groups for the active query, or null
-let allGroupsExpanded = false;  // "Collapse all" / "Expand all" toggle state
+
+// Which group keys are currently expanded — the single source of truth for
+// expand/collapse state, persisted across re-renders. Previously this was
+// just a DOM class (`.collapsed`) plus a single global "expand everything"
+// flag, which meant ANY full re-render (renaming a group, running
+// Autogroup, saving, searching, ...) wiped out whichever groups the user
+// had individually expanded/collapsed, snapping everything back to the
+// flag's blanket state. Tracking it here instead means a render() always
+// reproduces exactly what was actually expanded, no matter what triggered it.
+const expandedKeys = new Set();
 
 const showMoreBtn = document.getElementById('showMoreBtn');
 
@@ -1335,7 +1415,7 @@ function render(query, { resetPaging = true } = {}) {
   if (!q) {
     currentMatched = null;
     const slice = renderedGroups.slice(0, visibleCount);
-    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, '', allGroupsExpanded)).join('');
+    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, '', expandedKeys.has(g.key))).join('');
     statusEl.textContent = `${totalSongsCount} songs in ${renderedGroups.length} groups`;
     updateShowMore(renderedGroups.length);
   } else {
@@ -1350,7 +1430,7 @@ function render(query, { resetPaging = true } = {}) {
     }
     currentMatched = matched;
     const slice = matched.slice(0, visibleCount);
-    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, q, allGroupsExpanded)).join('');
+    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, q, expandedKeys.has(g.key))).join('');
     statusEl.textContent = `${matchCount} match${matchCount !== 1 ? 'es' : ''} in ${matched.length} group${matched.length !== 1 ? 's' : ''}`;
     updateShowMore(matched.length);
   }
@@ -1359,18 +1439,26 @@ function render(query, { resetPaging = true } = {}) {
   // listener on groupsEl below.
 }
 
-// "Collapse all" / "Expand all" toggle — a full re-render collapses (and
-// clears the lazily-populated bodies, keeping the DOM small) or expands
-// every *currently visible* group. Only the visible/paginated slice is
-// touched, not the whole catalog — expanding literally everything at once
-// would defeat the lazy-rendering this page relies on for large catalogs.
+// "Collapse all" / "Expand all" toggle — acts on whichever groups are
+// currently visible/paginated (not the whole catalog — expanding literally
+// everything at once would defeat the lazy-rendering this page relies on
+// for large catalogs). Whether the next click expands or collapses is
+// derived from whether the visible set is already fully expanded, rather
+// than a separately-tracked flag that could drift out of sync.
 const collapseAllBtn = document.getElementById('collapseAllBtn');
 const collapseAllLabel = document.getElementById('collapseAllLabel');
 collapseAllBtn.addEventListener('click', () => {
-  allGroupsExpanded = !allGroupsExpanded;
-  // Label always names the action clicking again will perform.
-  collapseAllLabel.textContent = allGroupsExpanded ? 'Collapse all' : 'Expand all';
-  collapseAllBtn.title = allGroupsExpanded ? 'Collapse all expanded groups' : 'Expand all visible groups';
+  const visible = (currentMatched ?? renderedGroups).slice(0, visibleCount);
+  const allVisibleExpanded = visible.length > 0 && visible.every(g => expandedKeys.has(g.key));
+  if (allVisibleExpanded) {
+    visible.forEach(g => expandedKeys.delete(g.key));
+    collapseAllLabel.textContent = 'Expand all';
+    collapseAllBtn.title = 'Expand all visible groups';
+  } else {
+    visible.forEach(g => expandedKeys.add(g.key));
+    collapseAllLabel.textContent = 'Collapse all';
+    collapseAllBtn.title = 'Collapse all expanded groups';
+  }
   render(searchInput.value, { resetPaging: false });
 });
 
@@ -1385,6 +1473,21 @@ const runAutogroupBtn = document.getElementById('runAutogroupBtn');
 runAutogroupBtn.addEventListener('click', () => {
   if (autogroupHasRun) return;
   autogroupHasRun = true;
+
+  // Snapshot whatever's currently known per song — from an earlier saved
+  // row or a prior in-session edit — BEFORE the fresh regroup below
+  // overwrites `overrides`. Used to skip queuing a write for any song whose
+  // computed group/label comes out identical to what's already known,
+  // instead of staging (and later PATCHing) every single song regardless.
+  const priorState = new Map();
+  for (const songId of Object.keys(overrides.moves)) {
+    const key = overrides.moves[songId];
+    priorState.set(Number(songId), {
+      group_id: parseManualKey(key),
+      version: overrides.songs[songId] ?? null,
+      version_title: overrides.groups[key] ?? null,
+    });
+  }
 
   // Regroup literally every song from scratch — including ones that already
   // have a saved grouping — ignoring whatever's currently in `overrides`.
@@ -1410,17 +1513,23 @@ runAutogroupBtn.addEventListener('click', () => {
   rebuildGroups(); // override-aware pass — now matches the fresh computation above
   render(searchInput.value);
 
-  // Every song just got (re)materialized into a manual group above, so
-  // stage all of them — not just the ones that were previously unsaved.
+  // Stage only the songs whose computed group_id/version/version_title
+  // actually differs from what was already known — an unchanged song has
+  // nothing worth writing, so leave it out of pendingChanges entirely.
   for (const g of renderedGroups) {
     const groupId = parseManualKey(g.key);
     const versionTitle = resolvedKey(g.key);
     const isMultiVersion = g.rows.length > 1;
-    g.rows.forEach(r => queueChange(r.song.id, {
-      group_id: groupId,
-      version: isMultiVersion ? resolvedLabel(r) : null,
-      version_title: versionTitle,
-    }));
+    g.rows.forEach(r => {
+      const version = isMultiVersion ? resolvedLabel(r) : null;
+      const prior = priorState.get(r.song.id);
+      const unchanged = prior
+        && prior.group_id === groupId
+        && (prior.version ?? null) === (version ?? null)
+        && (prior.version_title ?? null) === (versionTitle ?? null);
+      if (unchanged) return;
+      queueChange(r.song.id, { group_id: groupId, version, version_title: versionTitle });
+    });
   }
 
   runAutogroupBtn.disabled = true;
@@ -1443,7 +1552,7 @@ showMoreBtn.addEventListener('click', () => {
   const q = currentMatched ? searchInput.value.trim().toLowerCase() : '';
   const nextSlice = source.slice(visibleCount, visibleCount + PAGE_SIZE);
   visibleCount += PAGE_SIZE;
-  groupsEl.insertAdjacentHTML('beforeend', nextSlice.map(g => renderGroupShell(g.key, g.rows, q, allGroupsExpanded)).join(''));
+  groupsEl.insertAdjacentHTML('beforeend', nextSlice.map(g => renderGroupShell(g.key, g.rows, q, expandedKeys.has(g.key))).join(''));
   updateShowMore(source.length);
 });
 
@@ -1471,14 +1580,15 @@ async function populateGroup(groupEl) {
 }
 
 // Re-renders ONLY this one group's markup (not the whole list) — used after
-// a rename/reset. Preserves the group's current expanded/collapsed state.
+// a rename/reset. Preserves the group's current expanded/collapsed state
+// (from expandedKeys, the persisted source of truth — not the DOM class,
+// which this same call is about to replace anyway).
 function refreshGroupElement(groupEl, key) {
   const g = groupsByKey.get(key);
   if (!g) return;
   const q = searchInput.value.trim().toLowerCase();
-  const expanded = !groupEl.classList.contains('collapsed');
   const wrap = document.createElement('div');
-  wrap.innerHTML = renderGroupShell(g.key, g.rows, q, expanded).trim();
+  wrap.innerHTML = renderGroupShell(g.key, g.rows, q, expandedKeys.has(key)).trim();
   groupEl.replaceWith(wrap.firstElementChild);
 }
 
@@ -1565,8 +1675,14 @@ groupsEl.addEventListener('click', (e) => {
   const header = e.target.closest('.group-header');
   if (header) {
     const groupEl = header.closest('.group');
+    const key = groupEl.dataset.groupKey;
     const willExpand = groupEl.classList.contains('collapsed');
-    if (willExpand && !groupEl.dataset.populated) populateGroup(groupEl);
+    if (willExpand) {
+      expandedKeys.add(key);
+      if (!groupEl.dataset.populated) populateGroup(groupEl);
+    } else {
+      expandedKeys.delete(key);
+    }
     groupEl.classList.toggle('collapsed');
   }
 });
@@ -1882,15 +1998,12 @@ let pickerCtx = null; // { mode: 'move'|'merge', songId?, groupKey?, label }
 // the user was just working in), it's expanded again after the rebuild so
 // renaming/moving something doesn't collapse the group out from under you.
 function applyStructureChange(focusKey) {
+  // render() below builds each shell's body straight from expandedKeys, so
+  // marking focusKey expanded here is enough to keep it open post-rebuild —
+  // no separate populateGroup/DOM-patch pass needed.
+  if (focusKey) expandedKeys.add(focusKey);
   rebuildGroups();
   render(searchInput.value);
-  if (focusKey) {
-    const groupEl = groupsEl.querySelector(`.group[data-group-key="${CSS.escape(focusKey)}"]`);
-    if (groupEl) {
-      populateGroup(groupEl);
-      groupEl.classList.remove('collapsed');
-    }
-  }
 }
 
 function openPicker(ctx) {

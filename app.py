@@ -751,22 +751,39 @@ async def get_song(song_id: int):
 
 @app.get("/api/songs/all")
 async def get_all_songs():
-    """Fetches every song by walking the paginated /songs/ listing."""
-    songs = []
-    page = 1
-    while True:
-        data = await jw_get("/songs/", {"page": page, "page_size": 100})
-        songs.extend(data.get("results", []))
-        if not data.get("next"):
-            break
-        page += 1
+    """Every song in the catalog, via the upstream `?all=true` bulk variant
+    (bypasses pagination entirely instead of walking pages)."""
+    data = await jw_get("/songs/", {"all": "true"})
+    songs = data if isinstance(data, list) else data.get("results", [])
     return {"songs": songs}
+
+
+@app.get("/api/versions/all")
+async def get_all_versions():
+    """Every saved version/grouping row across the whole catalog, via the
+    upstream `?all=true` bulk variant (bypasses pagination entirely)."""
+    rows = await jw_get("/versions/", {"all": "true"})
+    if not isinstance(rows, list):
+        rows = rows.get("results", [])
+    for row in rows:
+        if "title" in row:
+            row["version_title"] = row.pop("title")
+    return {"versions": rows}
 
 
 @app.get("/api/versions/{song_id}")
 async def get_versions(song_id: int):
-    """Version/grouping rows for a song (and its group-mates), if any."""
-    return await jw_get(f"/versions/{song_id}/")
+    """Version/grouping rows for a song (and its group-mates), if any.
+
+    Upstream calls the group's display name "title"; our own contract with
+    the frontend uses "version_title" (matching the old Supabase column
+    name), so translate it here rather than leaking the upstream naming.
+    """
+    data = await jw_get(f"/versions/{song_id}/")
+    for row in data.get("results", []):
+        if "title" in row:
+            row["version_title"] = row.pop("title")
+    return data
 
 
 class VersionSaveRequest(BaseModel):
@@ -776,21 +793,29 @@ class VersionSaveRequest(BaseModel):
     version_title: str | None = None
 
 
-async def _write_version(song_id: int, req: VersionSaveRequest, method: str):
+async def _write_version(song_id: int, req: VersionSaveRequest, method: str, pk: int | None = None):
     if not req.token:
         raise HTTPException(401, "No auth token provided.")
+    # Create (POST) targets the list route; update (PATCH) targets the row's
+    # own detail route — Django's `versions/<int:song_id>/<int:pk>/`.
+    path = f"/versions/{song_id}/{pk}/" if pk is not None else f"/versions/{song_id}/"
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         r = await client.request(
             method,
-            BASE + f"/versions/{song_id}/",
+            BASE + path,
             headers={
                 "Authorization": f"Token {req.token}",
                 "Content-Type": "application/json",
             },
             json={
+                # Upstream requires both fields present and non-blank —
+                # "title" (not "version_title") and "version" as a string.
+                # Fall back to "Null" when a song has nothing more specific
+                # (e.g. it's alone with no other versions, or a "reset to
+                # automatic" that has no real label to give).
                 "group_id": req.group_id,
-                "version": req.version,
-                "version_title": req.version_title,
+                "version": req.version or "Null",
+                "title": req.version_title or "unknown",
             },
         )
         body = r.text
@@ -807,10 +832,10 @@ async def create_version(song_id: int, req: VersionSaveRequest):
     return await _write_version(song_id, req, "POST")
 
 
-@app.patch("/api/versions/{song_id}")
-async def update_version(song_id: int, req: VersionSaveRequest):
-    """Update of a song's existing version row."""
-    return await _write_version(song_id, req, "PATCH")
+@app.patch("/api/versions/{song_id}/{pk}")
+async def update_version(song_id: int, pk: int, req: VersionSaveRequest):
+    """Update of a song's existing version row (pk = that row's own id)."""
+    return await _write_version(song_id, req, "PATCH", pk=pk)
 
 
 @app.get("/api/model")

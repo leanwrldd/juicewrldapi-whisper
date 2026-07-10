@@ -4,181 +4,261 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Autogroup — WRLD Sync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #0a0a0f;
-    --surface: #13131c;
-    --surface2: #1c1c2a;
-    --border: #2a2a3d;
+    --bg: #09090f;
+    --surface: #131320;
+    --surface2: #1a1a29;
+    --border: #26263a;
+    --border-soft: #1c1c2c;
     --accent: #7c3aed;
     --accent2: #a855f7;
-    --text: #f0f0ff;
-    --muted: #7878a0;
+    --accent-soft: rgba(124, 58, 237, .14);
+    --accent-ring: rgba(168, 85, 247, .45);
+    --text: #f2f2fb;
+    --muted: #8888ab;
+    --muted-dim: #5f5f7d;
+    --danger: #ef4444;
+    --danger-soft: rgba(239, 68, 68, .12);
+    --radius: 10px;
+    --radius-sm: 7px;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-2: 0 8px 24px rgba(0,0,0,.45);
+    --shadow-3: 0 20px 60px rgba(0,0,0,.6);
+    --ease: cubic-bezier(.4,0,.2,1);
+    color-scheme: dark;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(124,58,237,.10), transparent 55%),
+      var(--bg);
     color: var(--text);
     height: 100vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    -webkit-font-smoothing: antialiased;
   }
 
+  /* Consistent, visible keyboard focus everywhere — hidden for mouse users */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid var(--accent2);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-dim); }
+
   header {
-    padding: 14px 20px;
+    padding: 11px 20px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     background: var(--surface);
+    box-shadow: var(--shadow-1);
+    position: relative;
+    z-index: 10;
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
   .logo {
-    font-size: 1.3rem;
+    font-size: 1.22rem;
     font-weight: 800;
-    letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    letter-spacing: -.02em;
+    background: linear-gradient(135deg, #c084fc, #7c3aed);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     white-space: nowrap;
   }
-  .page-title { font-size: .9rem; font-weight: 600; color: var(--muted); }
-  #status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
-  .sync-status {
-    font-size: .68rem;
+  .page-title {
+    font-size: .74rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .04em;
-    padding: 2px 8px;
+    color: var(--muted);
+    padding: 4px 9px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  #status {
+    font-size: .78rem;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .sync-status {
+    font-size: .66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 3px 9px 3px 8px;
     border-radius: 999px;
     white-space: nowrap;
     border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
+  .sync-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
   .sync-status:empty { display: none; }
-  .sync-ok      { color: #86efac; border-color: #14532d; background: rgba(34,197,94,.08); }
-  .sync-saving  { color: #fcd34d; border-color: #7c5e10; background: rgba(245,158,11,.08); }
-  .sync-error   { color: #fca5a5; border-color: #7c2d2d; background: rgba(239,68,68,.1); cursor: help; }
+  .sync-ok      { color: #4ade80; border-color: rgba(74,222,128,.28); background: rgba(34,197,94,.1); }
+  .sync-saving  { color: #fbbf24; border-color: rgba(251,191,36,.28); background: rgba(245,158,11,.1); }
+  .sync-saving::before { animation: pulse-dot 1.1s var(--ease) infinite; }
+  .sync-error   { color: #f87171; border-color: rgba(248,113,113,.28); background: rgba(239,68,68,.1); cursor: help; }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
-  .search-wrap { position: relative; width: 260px; margin-left: 12px; }
+  .search-wrap { position: relative; width: 230px; }
   .search-wrap svg {
     position: absolute;
-    left: 10px;
+    left: 11px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--muted);
+    color: var(--muted-dim);
     pointer-events: none;
   }
   #searchInput {
     width: 100%;
-    padding: 7px 12px 7px 32px;
+    padding: 7px 12px 7px 33px;
     border-radius: 999px;
     border: 1px solid var(--border);
     background: var(--bg);
     color: var(--text);
     font-size: .82rem;
     outline: none;
-    transition: border-color .15s;
+    transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
   }
-  #searchInput:focus { border-color: var(--accent2); }
-  #searchInput::placeholder { color: var(--muted); }
+  #searchInput:focus-visible { border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #searchInput::placeholder { color: var(--muted-dim); }
 
   mark {
-    background: rgba(124,58,237,.4);
+    background: rgba(168,85,247,.45);
     color: #fff;
     border-radius: 3px;
     padding: 0 1px;
   }
 
+  /* Thin vertical rule separating the identity/search cluster from the
+     action-button cluster, and grouping related actions within it. */
+  .header-divider { width: 1px; align-self: stretch; background: var(--border); flex-shrink: 0; margin: 0 1px; }
+
   .back-btn {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 13px;
-    border-radius: 8px;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
-    background: none;
+    background: var(--surface2);
     color: var(--muted);
-    font-size: .82rem;
+    font-size: .8rem;
     font-weight: 600;
     text-decoration: none;
-    transition: color .15s, border-color .15s, background .15s;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .15s var(--ease), border-color .15s var(--ease), background .15s var(--ease), transform .08s var(--ease);
   }
-  .back-btn:hover { color: var(--text); border-color: var(--accent2); background: rgba(124,58,237,.08); }
-  .back-btn:disabled { opacity: .45; cursor: not-allowed; }
+  #loadSongsBtn { margin-left: auto; }
+  .back-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent2); background: var(--accent-soft); }
+  .back-btn:active:not(:disabled) { transform: scale(.96); }
+  .back-btn:disabled { opacity: .4; cursor: not-allowed; }
   .save-changes-btn.has-pending {
     color: #fff;
     border-color: var(--accent);
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    box-shadow: 0 2px 12px rgba(124,58,237,.35);
   }
-  .save-changes-btn.has-pending:hover:not(:disabled) { background: var(--accent2); border-color: var(--accent2); }
+  .save-changes-btn.has-pending:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent2); }
 
   main {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 22px 20px 40px;
   }
+  /* Flat list, not individual cards — one shared border/radius around the
+     whole thing; groups are just rows separated by a divider line. */
   #groups {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    max-width: 780px;
+    max-width: 820px;
     margin: 0 auto;
-  }
-  .group {
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius);
     background: var(--surface);
     overflow: hidden;
+  }
+  .group {
+    border-top: 1px solid var(--border-soft);
+    transition: background .12s var(--ease);
     /* Skip layout/paint for groups outside the viewport — with thousands of
        groups this is the difference between a frozen page and a smooth one. */
     content-visibility: auto;
     contain-intrinsic-size: auto 41px;
   }
+  .group:first-child { border-top: none; }
+  .group:not(.collapsed) { background: rgba(168,85,247,.035); }
 
   #showMoreBtn {
     display: none;
-    margin: 4px auto 0;
-    padding: 9px 22px;
-    border-radius: 8px;
+    margin: 6px auto 0;
+    padding: 9px 24px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--muted);
     font-size: .82rem;
     font-weight: 600;
     cursor: pointer;
-    transition: color .15s, border-color .15s;
+    transition: color .15s var(--ease), border-color .15s var(--ease), background .15s var(--ease);
   }
-  #showMoreBtn:hover { color: var(--text); border-color: var(--accent2); }
+  #showMoreBtn:hover { color: var(--text); border-color: var(--accent2); background: var(--accent-soft); }
   #showMoreBtn.visible { display: block; }
   .group-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     padding: 10px 14px;
     background: var(--surface2);
     cursor: pointer;
     user-select: none;
+    transition: background .12s var(--ease);
   }
+  .group-header:hover { background: #212134; }
   .group-header svg {
-    color: var(--muted);
+    color: var(--muted-dim);
     flex-shrink: 0;
-    transition: transform .15s;
+    transition: transform .18s var(--ease);
   }
   .group.collapsed .group-header svg { transform: rotate(-90deg); }
-  .group:hover { border-color: #3a3a55; }
-  .group-name { font-size: .88rem; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-name { font-size: .87rem; font-weight: 700; letter-spacing: -.005em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-count {
-    font-size: .68rem;
+    font-size: .67rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
     color: var(--muted);
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 1px 8px;
+    padding: 1.5px 8px;
+    flex-shrink: 0;
   }
   .group-items { display: flex; flex-direction: column; }
   .group.collapsed .group-items { display: none; }
@@ -187,18 +267,18 @@
     align-items: center;
     gap: 8px;
     padding: 8px 14px;
-    border-top: 1px solid var(--border);
-    font-size: .83rem;
-    transition: background .12s;
+    border-top: 1px solid var(--border-soft);
+    font-size: .82rem;
+    transition: background .12s var(--ease);
   }
-  .song-row:hover { background: rgba(255,255,255,.025); }
+  .song-row:hover { background: rgba(168,85,247,.05); }
   .song-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .song-title.fallback { color: var(--muted); font-style: italic; }
   .tag {
-    font-size: .65rem;
+    font-size: .64rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: .04em;
+    letter-spacing: .045em;
     padding: 2px 6px;
     border-radius: 4px;
     background: var(--surface2);
@@ -206,55 +286,107 @@
     color: var(--muted);
     flex-shrink: 0;
   }
-  /* Category colors — matches the badges on the main app */
-  .tag-released         { background: #14532d; border-color: #14532d; color: #86efac; }
-  .tag-unreleased       { background: #7c2d12; border-color: #7c2d12; color: #fdba74; }
-  .tag-unsurfaced       { background: #1e1b4b; border-color: #1e1b4b; color: #a5b4fc; }
-  .tag-recording_session{ background: #1c1917; border-color: #1c1917; color: #a8a29e; }
+  /* Category colors — matches the badges on the main app; bumped for AA text contrast on dark fills */
+  .tag-released         { background: rgba(34,197,94,.14);  border-color: rgba(34,197,94,.3);  color: #4ade80; }
+  .tag-unreleased       { background: rgba(251,146,60,.14); border-color: rgba(251,146,60,.3); color: #fb923c; }
+  .tag-unsurfaced       { background: rgba(129,140,248,.14);border-color: rgba(129,140,248,.3);color: #a5b4fc; }
+  .tag-recording_session{ background: rgba(168,162,158,.14);border-color: rgba(168,162,158,.3);color: #d6d3d1; }
+
+  /* ── Empty / loading states for the group list ── */
+  .list-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 6px;
+    padding: 64px 24px;
+    color: var(--muted);
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  .list-state svg { color: var(--muted-dim); margin-bottom: 10px; }
+  .list-state h2 { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .list-state p { font-size: .84rem; max-width: 380px; line-height: 1.55; }
+  .list-state .back-btn { margin-top: 14px; }
+
+  .skeleton-group {
+    height: 41px;
+    border-top: 1px solid var(--border-soft);
+    background: linear-gradient(100deg, var(--surface) 40%, var(--surface2) 50%, var(--surface) 60%);
+    background-size: 250% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+  .skeleton-group:first-child { border-top: none; }
+  @keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-group { animation: none; background: var(--surface2); }
+  }
 
   .info-btn {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    padding: 2px;
-    border-radius: 5px;
+    padding: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    transition: color .15s, background .15s;
+    transition: color .15s var(--ease), background .15s var(--ease);
   }
-  .info-btn:hover { color: var(--accent2); background: rgba(124,58,237,.12); }
+  .info-btn:hover { color: var(--accent2); background: var(--accent-soft); }
 
   .edit-btn, .reset-btn, .move-btn, .merge-btn {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    padding: 2px;
-    border-radius: 5px;
+    padding: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     flex-shrink: 0;
     opacity: 0;                 /* hidden until the row/header is hovered */
-    transition: opacity .15s, color .15s, background .15s;
+    transition: opacity .15s var(--ease), color .15s var(--ease), background .15s var(--ease);
   }
   .song-row:hover .edit-btn, .song-row:hover .move-btn, .song-row:hover .reset-btn,
-  .group-header:hover .edit-btn, .group-header:hover .merge-btn, .group-header:hover .reset-btn {
+  .group-header:hover .edit-btn, .group-header:hover .merge-btn, .group-header:hover .reset-btn,
+  .edit-btn:focus-visible, .move-btn:focus-visible, .merge-btn:focus-visible, .reset-btn:focus-visible {
     opacity: .7;
   }
-  .edit-btn:hover, .move-btn:hover, .merge-btn:hover { opacity: 1 !important; color: var(--accent2); background: rgba(124,58,237,.12); }
-  .reset-btn:hover { opacity: 1 !important; color: #ef4444; background: rgba(239,68,68,.12); }
+  .edit-btn:hover, .move-btn:hover, .merge-btn:hover { opacity: 1 !important; color: var(--accent2); background: var(--accent-soft); }
+  .reset-btn:hover { opacity: 1 !important; color: var(--danger); background: var(--danger-soft); }
   /* Reset buttons stay visible (dimmed) even unhovered — they signal that a
      manual override exists on that row/group. */
   .reset-btn { opacity: .45; }
+
+  /* Per-group save — always visible (not hover-only) when that group has
+     pending changes, so the unsaved indicator is discoverable without
+     hovering, and colored to draw the eye like the header's Save changes. */
+  .save-group-btn {
+    background: none;
+    border: none;
+    color: var(--accent2);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color .15s var(--ease), background .15s var(--ease), transform .08s var(--ease);
+  }
+  .save-group-btn:hover { color: var(--text); background: var(--accent-soft); }
+  .save-group-btn:active { transform: scale(.9); }
+  .save-group-btn.saving { color: var(--muted-dim); pointer-events: none; animation: pulse-fade 1s ease-in-out infinite; }
+  @keyframes pulse-fade { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
   /* ── Group picker (move / merge target) ── */
   #pickerOverlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,.6);
+    background: rgba(6,6,12,.7);
+    backdrop-filter: blur(3px);
     z-index: 600;
     align-items: flex-start;
     justify-content: center;
@@ -269,35 +401,37 @@
     flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    box-shadow: var(--shadow-3);
   }
   #pickerTitle {
     font-size: .82rem;
     font-weight: 700;
-    padding: 12px 14px 8px;
+    padding: 13px 14px 9px;
     color: var(--muted);
   }
   #pickerInput {
     margin: 0 14px 10px;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--accent2);
     background: var(--bg);
     color: var(--text);
     font-size: .85rem;
     outline: none;
+    transition: box-shadow .15s var(--ease);
   }
-  #pickerInput::placeholder { color: var(--muted); }
+  #pickerInput:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
+  #pickerInput::placeholder { color: var(--muted-dim); }
   #pickerList {
     flex: 1;
     overflow-y: auto;
     border-top: 1px solid var(--border);
-    padding: 5px;
+    padding: 6px;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
   }
   .picker-item {
     text-align: left;
@@ -305,29 +439,31 @@
     border: none;
     color: var(--text);
     font-size: .84rem;
-    padding: 7px 10px;
-    border-radius: 7px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 8px;
+    transition: background .12s var(--ease);
   }
-  .picker-item:hover, .picker-item.active { background: var(--surface2); }
-  .picker-item .pi-count { margin-left: auto; font-size: .68rem; color: var(--muted); }
+  .picker-item:hover, .picker-item.active, .picker-item:focus-visible { background: var(--surface2); }
+  .picker-item .pi-count { margin-left: auto; font-size: .68rem; color: var(--muted); font-variant-numeric: tabular-nums; }
   .picker-item.pi-create { color: var(--accent2); font-weight: 600; }
   .picker-item.pi-reset { color: #f87171; font-weight: 600; }
-  .picker-empty { padding: 14px; text-align: center; color: var(--muted); font-size: .8rem; }
+  .picker-empty { padding: 20px 14px; text-align: center; color: var(--muted); font-size: .8rem; }
   .song-title.overridden { color: var(--text); font-style: normal; }
   .name-input {
     flex: 1;
     min-width: 0;
     background: var(--bg);
     border: 1px solid var(--accent2);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     color: var(--text);
     font: inherit;
-    padding: 2px 7px;
+    padding: 3px 8px;
     outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
 
   /* ── Song data modal ── */
@@ -335,7 +471,8 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,.6);
+    background: rgba(6,6,12,.7);
+    backdrop-filter: blur(3px);
     z-index: 500;
     align-items: center;
     justify-content: center;
@@ -350,9 +487,9 @@
     flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    box-shadow: var(--shadow-3);
   }
   #modalHeader {
     display: flex;
@@ -363,7 +500,7 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  #modalTitle { font-size: .88rem; font-weight: 700; flex: 1; }
+  #modalTitle { font-size: .88rem; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #modalClose {
     background: none;
     border: none;
@@ -371,8 +508,9 @@
     cursor: pointer;
     font-size: 1.1rem;
     line-height: 1;
-    padding: 2px 7px;
-    border-radius: 6px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: color .15s var(--ease), background .15s var(--ease);
   }
   #modalClose:hover { color: var(--text); background: rgba(255,255,255,.08); }
   #modalBody {
@@ -380,9 +518,9 @@
     overflow: auto;
     padding: 14px 16px;
     margin: 0;
-    font-family: monospace;
-    font-size: .78rem;
-    line-height: 1.6;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: .76rem;
+    line-height: 1.65;
     color: #c4b5fd;
     white-space: pre-wrap;
     word-break: break-word;
@@ -394,7 +532,7 @@
 <header>
   <div class="logo">WRLD Sync</div>
   <span class="page-title">Autogroup</span>
-  <span id="status">Loading songs…</span>
+  <span id="status">Click "Load songs" to fetch the catalog</span>
   <span id="syncStatus" class="sync-status" title=""></span>
   <div class="search-wrap">
     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -402,33 +540,34 @@
     </svg>
     <input id="searchInput" type="text" placeholder="Find a song's group…" autocomplete="off" />
   </div>
-  <button id="collapseAllBtn" class="back-btn" style="margin-left:0" title="Collapse all expanded groups">
+  <button id="loadSongsBtn" class="back-btn" title="Fetch every song that doesn't already have a saved version — songs with a version load automatically">
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    <span id="loadSongsLabel">Load songs</span>
+  </button>
+  <button id="collapseAllBtn" class="back-btn" title="Expand all visible groups">
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
       <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
-    Collapse all
+    <span id="collapseAllLabel">Expand all</span>
   </button>
-  <button id="runAutogroupBtn" class="back-btn" style="margin-left:0" title="Compute version groupings for every song that doesn't already have a saved group">
+  <button id="runAutogroupBtn" class="back-btn" title="Load songs first" disabled>
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
       <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
     </svg>
     <span id="runAutogroupLabel">Run Autogroup</span>
   </button>
-  <button id="saveAllBtn" class="back-btn" style="margin-left:0" title="Run Autogroup first" disabled>
-    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-      <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-    </svg>
-    <span id="saveAllLabel">Save all groups</span>
-  </button>
-  <button id="saveChangesBtn" class="back-btn save-changes-btn" style="margin-left:0" title="Push your renames/moves/merges to the API" disabled>
+  <span class="header-divider"></span>
+  <button id="saveChangesBtn" class="back-btn save-changes-btn" title="Push your renames/moves/merges to the API" disabled>
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <polyline points="20 6 9 17 4 12"/>
     </svg>
     <span id="saveChangesLabel">Save changes</span>
   </button>
+  <span class="header-divider"></span>
   <a class="back-btn" href="/db-manager.html">
     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <polyline points="15 18 9 12 15 6"/>
@@ -631,12 +770,17 @@ function stripCommonWords(rows) {
   candidates.forEach(r => {
     const kept = r.label.split(/\s+/).filter(Boolean).filter(w => (freq.get(w.toLowerCase()) ?? 0) < 2);
     const newLabel = kept.join(' ').trim();
-    if (!newLabel) {
-      r.label = categoryLabel(r.song.category);
-      r.isFallback = true;
-    } else {
-      r.label = newLabel;
-    }
+    // If EVERY word in this label also shows up elsewhere, stripping would
+    // erase it completely — that's not "this word is redundant", it means
+    // the words just happen to be reused across an unrelated sub-cluster
+    // (e.g. "v1"/"v2"/"v3" repeating between a plain version and a "with
+    // Justin Bieber" version). Falling back to the category in that case
+    // destroys real distinguishing info for the whole group at once. Leave
+    // the label untouched instead; dedupeLabels() below already knows how
+    // to disambiguate two rows that end up identical (era suffix, then
+    // "Alternate N"), which is a much better outcome than every row in the
+    // group collapsing to the same bare category text.
+    if (newLabel) r.label = newLabel;
   });
 }
 
@@ -739,14 +883,24 @@ async function fetchVersionRows(songId) {
 // Merges fetched rows into the local override maps. Returns true if
 // anything actually changed (i.e. this song/group turned out to have a
 // saved manual placement we didn't already know about).
+// The API requires "version"/"title" to be present and non-blank, so
+// saveVersionRow (see below) writes these placeholder strings when a song
+// has no real label to give. They're not genuine saved data — treat them as
+// "no override" so the auto-computed label/name shows instead of the raw
+// placeholder text.
+const PLACEHOLDER_LABELS = new Set(['unknown', 'Unknown', 'Null', 'null']);
+function isPlaceholderLabel(val) {
+  return !val || PLACEHOLDER_LABELS.has(val);
+}
+
 function applyVersionRows(rows) {
   let changed = false;
   for (const row of rows) {
-    songsWithOwnRow.add(row.song_id);
+    if (row.id !== undefined) songRowId.set(row.song_id, row.id);
     const key = manualKeyFor(row.group_id);
     if (overrides.moves[row.song_id] !== key) { overrides.moves[row.song_id] = key; changed = true; }
-    if (row.version && overrides.songs[row.song_id] !== row.version) { overrides.songs[row.song_id] = row.version; changed = true; }
-    if (row.version_title && overrides.groups[key] !== row.version_title) { overrides.groups[key] = row.version_title; changed = true; }
+    if (!isPlaceholderLabel(row.version) && overrides.songs[row.song_id] !== row.version) { overrides.songs[row.song_id] = row.version; changed = true; }
+    if (!isPlaceholderLabel(row.version_title) && overrides.groups[key] !== row.version_title) { overrides.groups[key] = row.version_title; changed = true; }
   }
   return changed;
 }
@@ -755,37 +909,45 @@ function applyVersionRows(rows) {
 // re-fetching them on subsequent expands/edits.
 const resolvedSongIds = new Set();
 
-// Songs already known to have their own version row on the server. The API
-// distinguishes create (POST, first row) from update (PATCH, row exists) —
-// this tracks which verb to use per song_id. Populated by resolved GETs and
-// by successful saves.
-const songsWithOwnRow = new Set();
+// song_id -> the version row's own primary key. The API scopes PATCH to a
+// specific row (PATCH /versions/{song_id}/{pk}/, per the Django route
+// `versions/<int:song_id>/<int:pk>/`), separate from the list/create route
+// (POST /versions/{song_id}/). Presence in this map means "this song
+// already has a row" (create vs. update); the value is what makes the
+// PATCH URL valid. Populated by resolved GETs and by successful saves.
+const songRowId = new Map();
 
 // Resolves overrides for every row's song, skipping ones already resolved.
 // Returns true if anything changed (caller should regroup + re-render).
-async function resolveOverridesFor(rows) {
+// `concurrency` caps how many GETs are in flight at once (matters when
+// called with the whole catalog on "Load songs", not just one group's rows);
+// `onProgress(done, total)` is optional, for surfacing progress on big calls.
+async function resolveOverridesFor(rows, { concurrency = 8, onProgress } = {}) {
   const toFetch = rows.map(r => r.song.id).filter(id => !resolvedSongIds.has(id));
   if (!toFetch.length) return false;
   toFetch.forEach(id => resolvedSongIds.add(id));
-  const results = await Promise.all(toFetch.map(fetchVersionRows));
   let changed = false;
-  for (const songRows of results) {
+  await runWithConcurrency(toFetch, async (songId) => {
+    const songRows = await fetchVersionRows(songId);
     if (applyVersionRows(songRows)) changed = true;
     songRows.forEach(r => resolvedSongIds.add(r.song_id)); // group-mates returned alongside
-  }
+  }, concurrency, onProgress);
   return changed;
 }
 
 // Persists one song's version row. The API has no DELETE, so a "reset to
 // automatic" is just a write that clears the row's fields — but it still
-// has to pick the right verb: POST the first time this song_id gets a row,
-// PATCH once one is known to already exist (POST-ing again 405s/duplicates).
+// has to pick the right verb/URL: POST /versions/{song_id}/ the first time
+// this song gets a row, PATCH /versions/{song_id}/{pk}/ (pk = the row's own
+// id) once one is known to already exist.
 async function saveVersionRow(songId, row) {
   const token = getToken();
   if (!token) throw new Error('Set your API token first (gear icon on the main app page).');
   const id = Number(songId);
-  const method = songsWithOwnRow.has(id) ? 'PATCH' : 'POST';
-  const resp = await fetch(`/api/versions/${songId}`, {
+  const pk = songRowId.get(id);
+  const method = pk !== undefined ? 'PATCH' : 'POST';
+  const url = pk !== undefined ? `/api/versions/${songId}/${pk}` : `/api/versions/${songId}`;
+  const resp = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -799,8 +961,9 @@ async function saveVersionRow(songId, row) {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${resp.status}`);
   }
-  songsWithOwnRow.add(id);
-  return resp.json();
+  const result = await resp.json();
+  if (result?.id !== undefined) songRowId.set(id, result.id);
+  return result;
 }
 
 // Runs `worker` over `items` with at most `concurrency` in flight at once.
@@ -872,6 +1035,7 @@ async function flushPendingChanges() {
     pendingChanges.delete(songId);
   }, 6, (done, total) => { saveChangesLabel.textContent = `Saving… (${done}/${total})`; });
   updateSaveChangesButton();
+  refreshVisibleGroupShells(); // drop now-stale per-group save indicators
   if (failed) {
     setSyncStatus('error', { message: `${failed} change(s) failed to save` });
     alert(`${failed} change(s) failed to save. They remain queued — try again.`);
@@ -881,6 +1045,45 @@ async function flushPendingChanges() {
   }
 }
 saveChangesBtn.addEventListener('click', flushPendingChanges);
+
+// Re-renders every group shell currently in the DOM (bounded by pagination,
+// so cheap) — used after a save touches songs across many groups at once,
+// so each group's per-group save indicator reflects what's actually still
+// pending instead of going stale.
+function refreshVisibleGroupShells() {
+  groupsEl.querySelectorAll('.group[data-group-key]').forEach(groupEl => {
+    refreshGroupElement(groupEl, groupEl.dataset.groupKey);
+  });
+}
+
+// Saves only the pending changes belonging to one group's songs, leaving
+// everything else queued. Scoped version of flushPendingChanges.
+async function saveGroupChanges(key, btnEl) {
+  const g = groupsByKey.get(key);
+  if (!g) return;
+  const entries = g.rows
+    .map(r => [r.song.id, pendingChanges.get(r.song.id)])
+    .filter(([, row]) => row !== undefined);
+  if (!entries.length) return;
+
+  if (btnEl) btnEl.classList.add('saving');
+  setSyncStatus('saving');
+  const failed = await runWithConcurrency(entries, async ([songId, row]) => {
+    await saveVersionRow(songId, row);
+    pendingChanges.delete(songId);
+  }, 6);
+  updateSaveChangesButton();
+
+  if (failed) {
+    setSyncStatus('error', { message: `${failed} song(s) in this group failed to save` });
+    alert(`${failed} song(s) in this group failed to save. They remain queued — try again.`);
+  } else {
+    setSyncStatus('ok');
+  }
+
+  const groupEl = groupsEl.querySelector(`.group[data-group-key="${CSS.escape(key)}"]`);
+  if (groupEl) refreshGroupElement(groupEl, key);
+}
 
 // Renames a group. Materializes (mints a group_id + rows for every current
 // member) the first time a pure-auto group is renamed. If another group
@@ -1049,6 +1252,10 @@ const MOVE_SVG = `<svg width="12" height="12" fill="none" stroke="currentColor" 
 const MERGE_SVG = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
   <path d="M8 7l4-4 4 4"/><path d="M12 3v9"/><path d="M5 21a7 7 0 0 1 7-7 7 7 0 0 1 7 7"/>
 </svg>`;
+const SAVE_SVG = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+  <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+</svg>`;
 
 // Builds just the inner rows for one group. Called lazily — only when a
 // group is actually expanded — so the initial render never pays for the
@@ -1082,6 +1289,7 @@ function groupBodyHTML(rows, q) {
 function renderGroupShell(key, rows, q, expanded) {
   const displayKey = resolvedKey(key);
   const isKeyOverridden = overrides.groups[key] !== undefined;
+  const hasPending = rows.some(r => pendingChanges.has(r.song.id));
   const body = expanded ? groupBodyHTML(rows, q) : '';
   return `<div class="group${expanded ? '' : ' collapsed'}" data-group-key="${esc(key)}"${expanded ? ' data-populated="1"' : ''}>
     <div class="group-header">
@@ -1090,6 +1298,7 @@ function renderGroupShell(key, rows, q, expanded) {
       <button class="edit-btn" data-edit="group" title="Rename this group">${PENCIL_SVG}</button>
       ${isKeyOverridden ? `<button class="reset-btn" data-reset="group" title="Reset to automatic name">${RESET_SVG}</button>` : ''}
       <button class="merge-btn" title="Merge this group into another">${MERGE_SVG}</button>
+      ${hasPending ? `<button class="save-group-btn" title="Save just this group's pending changes">${SAVE_SVG}</button>` : ''}
       <span class="group-count">${rows.length}</span>
     </div>
     <div class="group-items">${body}</div>
@@ -1115,6 +1324,7 @@ let totalSongsCount = 0;
 const PAGE_SIZE = 200;
 let visibleCount = PAGE_SIZE;   // pagination cursor
 let currentMatched = null;      // matched groups for the active query, or null
+let allGroupsExpanded = false;  // "Collapse all" / "Expand all" toggle state
 
 const showMoreBtn = document.getElementById('showMoreBtn');
 
@@ -1125,7 +1335,7 @@ function render(query, { resetPaging = true } = {}) {
   if (!q) {
     currentMatched = null;
     const slice = renderedGroups.slice(0, visibleCount);
-    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, '', false)).join('');
+    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, '', allGroupsExpanded)).join('');
     statusEl.textContent = `${totalSongsCount} songs in ${renderedGroups.length} groups`;
     updateShowMore(renderedGroups.length);
   } else {
@@ -1140,7 +1350,7 @@ function render(query, { resetPaging = true } = {}) {
     }
     currentMatched = matched;
     const slice = matched.slice(0, visibleCount);
-    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, q, false)).join('');
+    groupsEl.innerHTML = slice.map(g => renderGroupShell(g.key, g.rows, q, allGroupsExpanded)).join('');
     statusEl.textContent = `${matchCount} match${matchCount !== 1 ? 'es' : ''} in ${matched.length} group${matched.length !== 1 ? 's' : ''}`;
     updateShowMore(matched.length);
   }
@@ -1149,24 +1359,20 @@ function render(query, { resetPaging = true } = {}) {
   // listener on groupsEl below.
 }
 
-// "Collapse all" — a full re-render collapses everything (and clears the
-// lazily-populated bodies, which keeps the DOM small again).
-document.getElementById('collapseAllBtn').addEventListener('click', () => {
+// "Collapse all" / "Expand all" toggle — a full re-render collapses (and
+// clears the lazily-populated bodies, keeping the DOM small) or expands
+// every *currently visible* group. Only the visible/paginated slice is
+// touched, not the whole catalog — expanding literally everything at once
+// would defeat the lazy-rendering this page relies on for large catalogs.
+const collapseAllBtn = document.getElementById('collapseAllBtn');
+const collapseAllLabel = document.getElementById('collapseAllLabel');
+collapseAllBtn.addEventListener('click', () => {
+  allGroupsExpanded = !allGroupsExpanded;
+  // Label always names the action clicking again will perform.
+  collapseAllLabel.textContent = allGroupsExpanded ? 'Collapse all' : 'Expand all';
+  collapseAllBtn.title = allGroupsExpanded ? 'Collapse all expanded groups' : 'Expand all visible groups';
   render(searchInput.value, { resetPaging: false });
 });
-
-function rowsForBulkSave(g) {
-  if (parseManualKey(g.key) !== null) return []; // already persisted
-  const groupId = Math.min(...g.rows.map(r => r.song.id));
-  const versionTitle = resolvedKey(g.key);
-  const isMultiVersion = g.rows.length > 1;
-  return g.rows.map(r => ({
-    song_id: r.song.id,
-    group_id: groupId,
-    version: isMultiVersion ? resolvedLabel(r) : null,
-    version_title: versionTitle,
-  }));
-}
 
 // ── Run Autogroup — the bracket/version-stripping heuristic only runs when
 // this is clicked. Songs that are already known (locally) to have a saved
@@ -1179,75 +1385,45 @@ const runAutogroupBtn = document.getElementById('runAutogroupBtn');
 runAutogroupBtn.addEventListener('click', () => {
   if (autogroupHasRun) return;
   autogroupHasRun = true;
-  rebuildGroups();
+
+  // Regroup literally every song from scratch — including ones that already
+  // have a saved grouping — ignoring whatever's currently in `overrides`.
+  rebuildGroups(true);
+
+  // Re-materialize that fresh computation AS the new overrides (same shape
+  // "localMaterialize" builds for one group, just applied to all of them at
+  // once), so the normal override-aware render/edit/save machinery below
+  // treats it exactly like a real manual placement — nothing else needs to
+  // change to make renaming/moving/saving work on top of this.
+  for (const g of renderedGroups) {
+    const groupId = Math.min(...g.rows.map(r => r.song.id));
+    const manualKey = manualKeyFor(groupId);
+    const isMultiVersion = g.rows.length > 1;
+    g.rows.forEach(r => {
+      overrides.moves[r.song.id] = manualKey;
+      if (isMultiVersion) overrides.songs[r.song.id] = r.label;
+      else delete overrides.songs[r.song.id];
+    });
+    overrides.groups[manualKey] = g.key;
+  }
+
+  rebuildGroups(); // override-aware pass — now matches the fresh computation above
   render(searchInput.value);
 
+  // Every song just got (re)materialized into a manual group above, so
+  // stage all of them — not just the ones that were previously unsaved.
   for (const g of renderedGroups) {
-    rowsForBulkSave(g).forEach(row => queueChange(row.song_id, {
-      group_id: row.group_id, version: row.version, version_title: row.version_title,
+    const groupId = parseManualKey(g.key);
+    const versionTitle = resolvedKey(g.key);
+    const isMultiVersion = g.rows.length > 1;
+    g.rows.forEach(r => queueChange(r.song.id, {
+      group_id: groupId,
+      version: isMultiVersion ? resolvedLabel(r) : null,
+      version_title: versionTitle,
     }));
   }
 
   runAutogroupBtn.disabled = true;
-  saveAllBtn.disabled = false;
-  saveAllBtn.title = 'Write every computed group to the API, not just manually-edited ones';
-});
-
-// ── Save all — persists the FULL computed grouping, not just groups the
-// user has manually touched. Only meaningful for groups not already known
-// locally to be saved; those are skipped. Disabled until Run Autogroup has
-// been clicked, since before that everything is just its raw, ungrouped
-// title and there's nothing meaningful yet to bulk-save. The API has no
-// bulk-write route, so this fires one POST per song, a handful at a time.
-const saveAllBtn = document.getElementById('saveAllBtn');
-const saveAllLabel = document.getElementById('saveAllLabel');
-
-saveAllBtn.addEventListener('click', async () => {
-  const allRows = renderedGroups.flatMap(rowsForBulkSave);
-  if (!allRows.length) {
-    alert('Everything is already saved — no pure-automatic groups left to persist.');
-    return;
-  }
-  const proceed = confirm(
-    `This writes ${allRows.length} songs across ${renderedGroups.filter(g => parseManualKey(g.key) === null).length} ` +
-    `not-yet-saved groups to the API (one request per song) as the persisted grouping. Continue?`
-  );
-  if (!proceed) return;
-
-  saveAllBtn.disabled = true;
-  const originalText = saveAllLabel.textContent;
-  setSyncStatus('saving');
-  try {
-    const failed = await runWithConcurrency(allRows, async (row) => {
-      await saveVersionRow(row.song_id, row);
-    }, 6, (done, total) => { saveAllLabel.textContent = `Saving… (${done}/${total})`; });
-
-    // Reflect locally so these groups are treated as manual from now on —
-    // no need to re-materialize the next time one of them is touched.
-    for (const g of renderedGroups) {
-      if (parseManualKey(g.key) !== null) continue;
-      const groupId = Math.min(...g.rows.map(r => r.song.id));
-      const manualKey = manualKeyFor(groupId);
-      const name = resolvedKey(g.key);
-      g.rows.forEach(r => {
-        overrides.moves[r.song.id] = manualKey;
-        resolvedSongIds.add(r.song.id);
-        const label = g.rows.length > 1 ? resolvedLabel(r) : undefined;
-        if (label !== undefined) overrides.songs[r.song.id] = label;
-      });
-      overrides.groups[manualKey] = name;
-    }
-    applyStructureChange();
-    if (failed) {
-      setSyncStatus('error', { message: `${failed} song(s) failed to save` });
-      alert(`${failed} song(s) failed to save — the rest were persisted.`);
-    } else {
-      setSyncStatus('ok');
-    }
-  } finally {
-    saveAllBtn.disabled = false;
-    saveAllLabel.textContent = originalText;
-  }
 });
 
 function updateShowMore(total) {
@@ -1267,7 +1443,7 @@ showMoreBtn.addEventListener('click', () => {
   const q = currentMatched ? searchInput.value.trim().toLowerCase() : '';
   const nextSlice = source.slice(visibleCount, visibleCount + PAGE_SIZE);
   visibleCount += PAGE_SIZE;
-  groupsEl.insertAdjacentHTML('beforeend', nextSlice.map(g => renderGroupShell(g.key, g.rows, q, false)).join(''));
+  groupsEl.insertAdjacentHTML('beforeend', nextSlice.map(g => renderGroupShell(g.key, g.rows, q, allGroupsExpanded)).join(''));
   updateShowMore(source.length);
 });
 
@@ -1361,6 +1537,14 @@ groupsEl.addEventListener('click', (e) => {
     return;
   }
 
+  const saveGroupBtn = e.target.closest('.save-group-btn');
+  if (saveGroupBtn) {
+    e.stopPropagation();
+    const key = saveGroupBtn.closest('.group').dataset.groupKey;
+    saveGroupChanges(key, saveGroupBtn);
+    return;
+  }
+
   const resetBtn = e.target.closest('.reset-btn');
   if (resetBtn) {
     e.stopPropagation();
@@ -1429,7 +1613,21 @@ searchInput.addEventListener('input', () => {
   searchTimer = setTimeout(() => render(searchInput.value), 120);
 });
 
-let allSongs = []; // raw catalog, kept so grouping can be rebuilt after a move/merge
+let allSongs = []; // loaded catalog subset, kept so grouping can be rebuilt after a move/merge
+const loadedSongIds = new Set(); // song ids already in allSongs — guards against double-adding
+
+// Merges newly-fetched song objects into allSongs, skipping ones already
+// present (from the other loading path). Returns how many were actually new.
+function addSongs(songs) {
+  let added = 0;
+  for (const song of songs) {
+    if (loadedSongIds.has(song.id)) continue;
+    loadedSongIds.add(song.id);
+    allSongs.push(song);
+    added++;
+  }
+  return added;
+}
 
 // The automatic bracket/version-stripping heuristic only runs after the user
 // explicitly clicks "Run Autogroup" — on load (and after any move/merge/
@@ -1440,7 +1638,11 @@ let autogroupHasRun = false;
 // Runs the grouping pipeline over allSongs. Split out from load() so
 // structural changes (moving a song, merging groups) can recompute groups
 // without refetching the catalog.
-function rebuildGroups() {
+// `ignoreOverrides` computes the pure auto-heuristic grouping, skipping the
+// "manual placement wins" step below — used for a one-off fresh recompute
+// (see the Run Autogroup handler) that then re-materializes the result as
+// the new overrides, rather than for normal rendering.
+function rebuildGroups(ignoreOverrides = false) {
   const infos = allSongs.map(song => ({ song, info: infoFor(song) }));
 
   // Count how many songs share each base title (only among those with a
@@ -1484,8 +1686,10 @@ function rebuildGroups() {
 
     // Manual placement wins over the automatic assignment. The target may
     // be a brand-new group name the user typed — that just creates it.
-    const moved = overrides.moves[song.id];
-    if (moved !== undefined) groupKey = moved;
+    if (!ignoreOverrides) {
+      const moved = overrides.moves[song.id];
+      if (moved !== undefined) groupKey = moved;
+    }
 
     if (!groups.has(groupKey)) groups.set(groupKey, []);
     groups.get(groupKey).push({ song, info });
@@ -1512,20 +1716,131 @@ function rebuildGroups() {
   groupsByKey = new Map(renderedGroups.map(g => [g.key, g]));
 }
 
+// ── Empty / loading / error placeholders for the group list — shown in
+// place of actual groups before the catalog is loaded, while it's loading,
+// and if the fetch fails. Keeps the list area from just being blank space.
+const LOAD_SVG = `<svg width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+</svg>`;
+const ERROR_SVG = `<svg width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+</svg>`;
+
+function renderEmptyState() {
+  groupsEl.innerHTML = `<div class="list-state">
+    ${LOAD_SVG}
+    <h2>No songs loaded yet</h2>
+    <p>Songs with a saved grouping load automatically. Click "Load songs" to also pull in the rest of the catalog — everything that doesn't have a version yet.</p>
+    <button class="back-btn" id="emptyStateLoadBtn">Load songs</button>
+  </div>`;
+  document.getElementById('emptyStateLoadBtn')?.addEventListener('click', load);
+}
+
+function renderLoadingSkeleton() {
+  groupsEl.innerHTML = Array.from({ length: 12 }, () => '<div class="skeleton-group"></div>').join('');
+}
+
+function renderErrorState(message) {
+  groupsEl.innerHTML = `<div class="list-state">
+    ${ERROR_SVG}
+    <h2>Couldn't load songs</h2>
+    <p>${esc(message)}</p>
+    <button class="back-btn" id="errorStateRetryBtn">Try again</button>
+  </div>`;
+  document.getElementById('errorStateRetryBtn')?.addEventListener('click', load);
+}
+
+// Fetches one song's full metadata (title, era, category, etc.) — the
+// versions route only has song_id/group_id/version/title, not enough to
+// render an actual row, so a versioned song needs this to show up.
+// /api/songs/all is already a single bulk request regardless of catalog
+// size (it's the upstream ?all=true route, not paged) — so there's no
+// network reason to avoid it. Fetched once and cached here; both the
+// automatic versioned-songs load and the "Load songs" button reuse the same
+// in-flight/resolved promise instead of each firing their own request.
+let fullCatalogPromise = null;
+function fetchFullCatalog() {
+  if (!fullCatalogPromise) {
+    fullCatalogPromise = fetch('/api/songs/all')
+      .then(resp => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); return resp.json(); })
+      .then(data => data.songs ?? []);
+  }
+  return fullCatalogPromise;
+}
+
+// Reveals the rest of the catalog — everything that doesn't already have a
+// saved version (those are added automatically by loadAllVersions below).
+// Reuses the cached bulk fetch above, so this is free if that already ran.
+const loadSongsBtn = document.getElementById('loadSongsBtn');
+const loadSongsLabel = document.getElementById('loadSongsLabel');
+
 async function load() {
+  loadSongsBtn.disabled = true;
+  loadSongsLabel.textContent = 'Loading…';
+  statusEl.textContent = 'Loading songs without a saved version…';
+  if (!allSongs.length) renderLoadingSkeleton();
   try {
-    const resp = await fetch('/api/songs/all');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    allSongs = data.songs ?? [];
+    const catalog = await fetchFullCatalog();
+    const added = addSongs(catalog);
     totalSongsCount = allSongs.length;
 
+    // Resolve overrides for anything newly added (cheap — resolveOverridesFor
+    // skips song ids already resolved, which covers every versioned song
+    // loadAllVersions() already pulled in).
+    await resolveOverridesFor(allSongs.map(song => ({ song })), {
+      concurrency: 8,
+      onProgress: (done, total) => { statusEl.textContent = `Resolving saved versions… (${done}/${total})`; },
+    });
+
     rebuildGroups();
-    render(searchInput.value);
+    render(searchInput.value); // sets statusEl to the final "N songs in M groups" text
+    runAutogroupBtn.disabled = autogroupHasRun;
+    runAutogroupBtn.title = autogroupHasRun ? '' : 'Regroup every song from scratch, including already-saved groups — stages the result for review, does not save until you click Save changes';
+    loadSongsLabel.textContent = added ? 'Reload songs' : 'Load songs';
+    loadSongsBtn.title = added
+      ? `Fetch the full song catalog again — added ${added} new song(s) without a saved version last time`
+      : 'Everything without a saved version is already loaded';
   } catch (e) {
     statusEl.textContent = 'Failed to load: ' + (e.message ?? e);
+    if (!allSongs.length) renderErrorState(e.message ?? String(e));
+  } finally {
+    loadSongsBtn.disabled = false;
   }
 }
+loadSongsBtn.addEventListener('click', load);
+
+// Auto-loads every saved version row via the bulk /versions/?all=true route
+// as soon as the page opens, then pulls the (also-bulk, single-request)
+// catalog and filters it down to just the versioned songs so they render as
+// real, browsable groups immediately. "Load songs" reuses this same cached
+// catalog fetch to reveal everything else.
+async function loadAllVersions() {
+  setSyncStatus('saving');
+  try {
+    const resp = await fetch('/api/versions/all');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const rows = data.versions ?? [];
+    applyVersionRows(rows); // also populates songRowId per row
+    rows.forEach(r => resolvedSongIds.add(r.song_id));
+
+    const versionedIds = new Set(rows.map(r => r.song_id));
+    if (versionedIds.size) {
+      renderLoadingSkeleton();
+      statusEl.textContent = 'Loading versioned songs…';
+      const catalog = await fetchFullCatalog();
+      addSongs(catalog.filter(song => versionedIds.has(song.id)));
+      totalSongsCount = allSongs.length;
+      rebuildGroups();
+      render(searchInput.value); // sets statusEl to the final "N songs in M groups" text
+    }
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error', e); // non-fatal — versions still resolve lazily per group as a fallback
+  }
+}
+renderEmptyState();
+loadAllVersions();
 
 // ── Song data modal ──────────────────────────────────────────────────────
 const modalOverlay = document.getElementById('modalOverlay');
@@ -1658,8 +1973,6 @@ pickerInput.addEventListener('keydown', (e) => {
   }
 });
 pickerOverlay.addEventListener('click', (e) => { if (e.target === pickerOverlay) closePicker(); });
-
-load();
 </script>
 </body>
 </html>

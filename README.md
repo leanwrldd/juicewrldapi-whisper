@@ -28,7 +28,7 @@ If an NVIDIA GPU is detected, `launch.py` automatically installs the CUDA build 
 
 ## Usage
 
-1. Type a song name in the search box
+1. Type a song name in the search box (or click the `#` button next to it to switch to loading a song directly by its ID, then press Enter)
 2. Click a result to load it — audio streams immediately
 3. Hit **Sync with Whisper** — the backend downloads the audio and runs local Whisper
 4. Watch the lyrics highlight word-by-word as the song plays

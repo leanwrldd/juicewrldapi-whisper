@@ -67,7 +67,7 @@
   }
   #searchInput {
     width: 100%;
-    padding: 9px 14px 9px 38px;
+    padding: 9px 34px 9px 38px;
     border-radius: 999px;
     border: 1px solid var(--border);
     background: var(--bg);
@@ -78,6 +78,17 @@
   }
   #searchInput:focus { border-color: var(--accent2); }
   #searchInput::placeholder { color: var(--muted); }
+  #searchModeBtn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: .85rem;
+    line-height: 1;
+  }
 
   /* Icon buttons in header */
   .hbtn {
@@ -1133,6 +1144,7 @@
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
     <input id="searchInput" type="text" placeholder="Search songs…" autocomplete="off" />
+    <button id="searchModeBtn" class="hbtn" title="Load by song ID" type="button">#</button>
   </div>
 
   <!-- Random + filter -->
@@ -1506,6 +1518,7 @@ let offsetTotal    = 0;     // seconds; cumulative shift applied to all synced l
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const searchInput      = document.getElementById('searchInput');
+const searchModeBtn    = document.getElementById('searchModeBtn');
 const resultsList      = document.getElementById('resultsList');
 const resultsHeaderText= document.getElementById('resultsHeaderText');
 const emptyState       = document.getElementById('emptyState');
@@ -1670,7 +1683,30 @@ randomBtn.addEventListener('click', async () => {
 
 // ── Search ────────────────────────────────────────────────────────────────
 let searchTimer = null;
+let idMode = false;
+
+searchModeBtn.addEventListener('click', () => {
+  idMode = !idMode;
+  searchModeBtn.classList.toggle('active', idMode);
+  searchModeBtn.title = idMode ? 'Switch back to search' : 'Load by song ID';
+  searchInput.placeholder = idMode ? 'Enter song ID and press Enter…' : 'Search songs…';
+  searchInput.value = '';
+  clearTimeout(searchTimer);
+  resultsList.innerHTML = '';
+  resultsHeaderText.textContent = idMode ? 'Enter a song ID and press Enter' : 'Type to search';
+  searchInput.focus();
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (idMode && e.key === 'Enter') {
+    const id = Number(searchInput.value.trim());
+    if (!id) return;
+    loadSongById(id);
+  }
+});
+
 searchInput.addEventListener('input', () => {
+  if (idMode) return;
   clearTimeout(searchTimer);
   const q = searchInput.value.trim();
   if (!q) { resultsList.innerHTML = ''; resultsHeaderText.textContent = 'Type to search'; return; }
@@ -1723,6 +1759,17 @@ async function loadSong(id) {
   document.querySelectorAll('.song-card').forEach(c => c.classList.toggle('active', Number(c.dataset.id) === id));
   const song = await api(`/api/song/${id}`);
   await loadSongData(song);
+}
+
+async function loadSongById(id) {
+  resultsHeaderText.textContent = `Loading song #${id}…`;
+  resultsList.innerHTML = '';
+  try {
+    await loadSong(id);
+    resultsHeaderText.textContent = `Loaded song #${id}`;
+  } catch (e) {
+    resultsHeaderText.textContent = `No song found with ID ${id}`;
+  }
 }
 
 async function loadSongData(song) {

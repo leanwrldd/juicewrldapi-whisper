@@ -217,6 +217,18 @@
   }
   #alignModelSelect:focus, #verifyModelSelect:focus { border-color: var(--accent2); }
   .model-status { font-size: .73rem; color: var(--muted); white-space: nowrap; }
+  #rewindIncrementInput {
+    width: 64px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: .83rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #rewindIncrementInput:focus { border-color: var(--accent2); }
   .device-btns { display: flex; gap: 4px; }
   .dev-btn {
     flex: 1;
@@ -1269,6 +1281,10 @@
     </select>
   </div>
   <div class="sg">
+    <label for="rewindIncrementInput">Rewind increment (C key)</label>
+    <input id="rewindIncrementInput" type="number" step="0.1" min="0.1" value="0.1" />
+  </div>
+  <div class="sg">
     <label>Device</label>
     <div class="device-btns">
       <button class="dev-btn active" data-dev="auto">Auto</button>
@@ -1345,7 +1361,7 @@
               <span class="offset-value" id="offsetValue">0.0s</span>
               <button class="offset-btn" id="offsetPlusBtn">+0.1s</button>
             </div>
-            <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;C rewind .1s &nbsp;Ctrl+Space play</span>
+            <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;C rewind + replay &nbsp;Ctrl+Space play</span>
             <div class="shortcuts-info-wrap">
               <button class="icon-btn-sm" id="shortcutsInfoBtn" title="Keyboard shortcuts">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1359,7 +1375,7 @@
                 <div class="shortcuts-row"><kbd>Ctrl</kbd>+<kbd>←</kbd> <kbd>→</kbd><span>Pin previous / next line (no seek)</span></div>
                 <div class="shortcuts-row"><kbd>↑</kbd> <kbd>↓</kbd><span>Seek 1s back / forward</span></div>
                 <div class="shortcuts-row"><kbd>Space</kbd><span>Stamp current time to line</span></div>
-                <div class="shortcuts-row"><kbd>C</kbd><span>Rewind current line 0.1s</span></div>
+                <div class="shortcuts-row"><kbd>C</kbd><span>Rewind current line and replay (increment configurable in Settings)</span></div>
                 <div class="shortcuts-row"><kbd>Ctrl</kbd>+<kbd>Space</kbd><span>Play / pause</span></div>
               </div>
             </div>
@@ -1586,6 +1602,7 @@ const copyLrcBtn       = document.getElementById('copyLrcBtn');
 const alignModelSelect  = document.getElementById('alignModelSelect');
 const verifyModelSelect = document.getElementById('verifyModelSelect');
 const deviceBtns        = document.querySelectorAll('.dev-btn');
+const rewindIncrementInput = document.getElementById('rewindIncrementInput');
 const modelStatus       = document.getElementById('modelStatus');
 const collapseSidebarBtn = document.getElementById('collapseSidebarBtn');
 const expandSidebarBtn   = document.getElementById('expandSidebarBtn');
@@ -1600,6 +1617,16 @@ const closeQueueBtn      = document.getElementById('closeQueueBtn');
 const clearDoneBtn       = document.getElementById('clearDoneBtn');
 
 // ── Sidebar collapse ──────────────────────────────────────────────────────
+// ── Rewind increment (C key) ─────────────────────────────────────────────
+let rewindIncrement = parseFloat(localStorage.getItem('jw_rewind_increment')) || 0.1;
+rewindIncrementInput.value = rewindIncrement;
+rewindIncrementInput.addEventListener('change', () => {
+  const val = parseFloat(rewindIncrementInput.value);
+  rewindIncrement = (!isNaN(val) && val > 0) ? Math.round(val * 1000) / 1000 : 0.1;
+  rewindIncrementInput.value = rewindIncrement;
+  localStorage.setItem('jw_rewind_increment', String(rewindIncrement));
+});
+
 if (localStorage.getItem('jw_sidebar') === '0') mainEl.classList.add('sidebar-collapsed');
 collapseSidebarBtn.addEventListener('click', () => {
   mainEl.classList.add('sidebar-collapsed');
@@ -2477,9 +2504,11 @@ document.addEventListener('keydown', (e) => {
     const idx = pinnedIdx >= 0 ? pinnedIdx : activeLineIdx;
     if (idx < 0 || idx >= syncedLines.length) return;
     const line = syncedLines[idx];
-    line.start = Math.max(0, Math.round((line.start - 0.1) * 1000) / 1000);
+    line.start = Math.max(0, Math.round((line.start - rewindIncrement) * 1000) / 1000);
     const chip = karaokeLines.querySelector(`.kl-time[data-time-i="${idx}"]`);
     if (chip) chip.textContent = fmtTime(line.start);
+    audioPlayer.currentTime = line.start;
+    audioPlayer.play();
   }
 });
 

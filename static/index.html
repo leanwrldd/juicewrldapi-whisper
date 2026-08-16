@@ -587,6 +587,8 @@
     font-variant-numeric: tabular-nums;
   }
   .offset-value.nonzero { color: var(--accent2); font-weight: 600; }
+  .offset-btn.danger { color: var(--danger); border-color: transparent; }
+  .offset-btn.danger:hover { color: #fff; border-color: var(--danger); background: var(--danger); }
   .lyrics-body { padding: 20px; flex: 1; }
 
   /* Karaoke */
@@ -1360,6 +1362,7 @@
               <button class="offset-btn" id="offsetMinusBtn">−0.1s</button>
               <span class="offset-value" id="offsetValue">0.0s</span>
               <button class="offset-btn" id="offsetPlusBtn">+0.1s</button>
+              <button class="offset-btn danger" id="clearSyncedBtn" title="Remove synced lyrics">Clear</button>
             </div>
             <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;C rewind + replay &nbsp;V +1s &nbsp;X replay &nbsp;Ctrl+Space play</span>
             <div class="shortcuts-info-wrap">
@@ -1566,6 +1569,7 @@ const resumeFollowBtn  = document.getElementById('resumeFollowBtn');
 const lyricsOffsetControl = document.getElementById('lyricsOffsetControl');
 const offsetMinusBtn   = document.getElementById('offsetMinusBtn');
 const offsetPlusBtn    = document.getElementById('offsetPlusBtn');
+const clearSyncedBtn   = document.getElementById('clearSyncedBtn');
 const offsetValueEl    = document.getElementById('offsetValue');
 const randomBtn        = document.getElementById('randomBtn');
 const randomFilterBtn  = document.getElementById('randomFilterBtn');
@@ -2139,6 +2143,13 @@ function nudgeOffset(delta) {
 
 offsetMinusBtn.addEventListener('click', () => nudgeOffset(-0.1));
 offsetPlusBtn.addEventListener('click', () => nudgeOffset(0.1));
+
+clearSyncedBtn.addEventListener('click', () => {
+  if (!syncedLines.length) return;
+  if (!confirm('Remove synced lyrics for this song?')) return;
+  syncedLines = []; activeLineIdx = -1; pinnedIdx = -1;
+  setKaraokeDefault();
+});
 
 // Click to seek / edit time chip
 karaokeLines.addEventListener('click', (e) => {

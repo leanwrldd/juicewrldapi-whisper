@@ -1345,7 +1345,7 @@
               <span class="offset-value" id="offsetValue">0.0s</span>
               <button class="offset-btn" id="offsetPlusBtn">+0.1s</button>
             </div>
-            <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;Ctrl+Space play</span>
+            <span class="shortcuts-hint">← → seek &nbsp;Ctrl+← → pin &nbsp;↑↓ ±1s &nbsp;Space stamp &nbsp;C rewind .1s &nbsp;Ctrl+Space play</span>
             <div class="shortcuts-info-wrap">
               <button class="icon-btn-sm" id="shortcutsInfoBtn" title="Keyboard shortcuts">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1359,6 +1359,7 @@
                 <div class="shortcuts-row"><kbd>Ctrl</kbd>+<kbd>←</kbd> <kbd>→</kbd><span>Pin previous / next line (no seek)</span></div>
                 <div class="shortcuts-row"><kbd>↑</kbd> <kbd>↓</kbd><span>Seek 1s back / forward</span></div>
                 <div class="shortcuts-row"><kbd>Space</kbd><span>Stamp current time to line</span></div>
+                <div class="shortcuts-row"><kbd>C</kbd><span>Rewind current line 0.1s</span></div>
                 <div class="shortcuts-row"><kbd>Ctrl</kbd>+<kbd>Space</kbd><span>Play / pause</span></div>
               </div>
             </div>
@@ -2419,7 +2420,7 @@ function parseLRC(lrc) {
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────
-const OUR_KEYS = new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ']);
+const OUR_KEYS = new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','c','C']);
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (OUR_KEYS.has(e.key)) e.preventDefault();
@@ -2472,6 +2473,13 @@ document.addEventListener('keydown', (e) => {
       div.style.outlineOffset = '2px';
       setTimeout(() => { div.style.outline = ''; div.style.outlineOffset = ''; }, 350);
     }
+  } else if (e.key === 'c' || e.key === 'C') {
+    const idx = pinnedIdx >= 0 ? pinnedIdx : activeLineIdx;
+    if (idx < 0 || idx >= syncedLines.length) return;
+    const line = syncedLines[idx];
+    line.start = Math.max(0, Math.round((line.start - 0.1) * 1000) / 1000);
+    const chip = karaokeLines.querySelector(`.kl-time[data-time-i="${idx}"]`);
+    if (chip) chip.textContent = fmtTime(line.start);
   }
 });
 

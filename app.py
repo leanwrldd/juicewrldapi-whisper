@@ -201,18 +201,28 @@ def _cuda_usable() -> bool:
     it stays True even when the installed PyTorch build has no compiled kernels
     for that GPU's compute capability (e.g. a cu128 wheel on an old Pascal card
     like the GT 1030 / sm_61), which fails loudly mid-computation instead of at
-    startup. Cross-check the device's arch against what this build actually
-    shipped kernels for."""
+    startup. Cross-check the device's capability against what this build ships
+    kernels for.
+
+    Note this is a floor check, not exact membership: CUDA's minor-version
+    compatibility means e.g. sm_86-compiled kernels already run fine on sm_89
+    (Ada/RTX 40-series) hardware, so a capability that's simply absent from
+    get_arch_list() but *higher* than everything in it is still fine. Only a
+    capability *lower* than the build's floor is a real incompatibility."""
     import torch
     if not torch.cuda.is_available():
         return False
     try:
         major, minor = torch.cuda.get_device_capability()
-        arch = f"sm_{major}{minor}"
-        arch_list = torch.cuda.get_arch_list()
-        if arch_list and arch not in arch_list:
-            print(f"[whisper] GPU compute capability {arch} isn't supported by the installed "
-                  f"PyTorch build (supports {', '.join(arch_list)}) — falling back to CPU.")
+        cap = major + minor / 10
+        arch_caps = []
+        for arch in torch.cuda.get_arch_list():
+            digits = "".join(ch for ch in arch if ch.isdigit())
+            if len(digits) >= 2:
+                arch_caps.append(int(digits[:-1]) + int(digits[-1]) / 10)
+        if arch_caps and cap < min(arch_caps):
+            print(f"[whisper] GPU compute capability {major}.{minor} is older than the "
+                  f"installed PyTorch build's minimum ({min(arch_caps):.1f}) — falling back to CPU.")
             return False
     except Exception:
         pass

@@ -196,13 +196,35 @@ def _write_pref(filename: str, value: str) -> None:
 # Device preference: "auto" | "cpu" | "cuda"
 DEVICE_PREF: str = _read_pref(".device_pref", ["auto", "cpu", "cuda"], "auto")
 
+def _cuda_usable() -> bool:
+    """torch.cuda.is_available() only checks that a driver + device are present —
+    it stays True even when the installed PyTorch build has no compiled kernels
+    for that GPU's compute capability (e.g. a cu128 wheel on an old Pascal card
+    like the GT 1030 / sm_61), which fails loudly mid-computation instead of at
+    startup. Cross-check the device's arch against what this build actually
+    shipped kernels for."""
+    import torch
+    if not torch.cuda.is_available():
+        return False
+    try:
+        major, minor = torch.cuda.get_device_capability()
+        arch = f"sm_{major}{minor}"
+        arch_list = torch.cuda.get_arch_list()
+        if arch_list and arch not in arch_list:
+            print(f"[whisper] GPU compute capability {arch} isn't supported by the installed "
+                  f"PyTorch build (supports {', '.join(arch_list)}) — falling back to CPU.")
+            return False
+    except Exception:
+        pass
+    return True
+
+
 def _get_device() -> str:
     if DEVICE_PREF == "cpu":
         return "cpu"
-    import torch
-    avail = "cuda" if torch.cuda.is_available() else "cpu"
+    avail = "cuda" if _cuda_usable() else "cpu"
     if DEVICE_PREF == "cuda" and avail != "cuda":
-        print("[whisper] CUDA requested but not available — falling back to CPU.")
+        print("[whisper] CUDA requested but not usable — falling back to CPU.")
         return "cpu"
     return avail
 
@@ -691,6 +713,11 @@ def _log_startup_diagnostics() -> None:
         print(f"[startup] torch.cuda.is_available(): {cuda_available}")
         if cuda_available:
             print(f"[startup] GPU: {torch.cuda.get_device_name(0)}")
+            if not _cuda_usable():
+                print("[startup] This GPU's compute capability isn't supported by the installed "
+                      "PyTorch build, so Whisper will run on CPU instead. This usually means the "
+                      "GPU is too old for the CUDA build launch.py installed — no fix available "
+                      "besides using CPU or a newer GPU.")
         elif DEVICE_PREF == "cuda":
             print("[startup] Device preference is 'cuda' but CUDA isn't available from this "
                   "interpreter — Whisper will fall back to CPU. If you expected GPU here, "
@@ -840,8 +867,7 @@ async def update_version(song_id: int, pk: int, req: VersionSaveRequest):
 
 @app.get("/api/model")
 async def get_model_info():
-    import torch
-    avail_device = "cuda" if torch.cuda.is_available() else "cpu"
+    avail_device = "cuda" if _cuda_usable() else "cpu"
     return {
         # legacy field kept for backward-compat
         "model": ALIGN_MODEL_SIZE,
@@ -893,12 +919,11 @@ async def set_model(body: dict):
         _align_model  = None   # force reload on new device
         _verify_model = None
 
-    import torch
     return {
         "align_model":   ALIGN_MODEL_SIZE,
         "verify_model":  VERIFY_MODEL_SIZE,
         "device_pref":   DEVICE_PREF,
-        "device":        "cuda" if torch.cuda.is_available() else "cpu",
+        "device":        "cuda" if _cuda_usable() else "cpu",
         "align_loaded":  _align_model is not None,
         "verify_loaded": _verify_model is not None,
     }

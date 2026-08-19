@@ -324,6 +324,29 @@ def has_nvidia_gpu() -> bool:
         return False
 
 
+def gpu_compute_capability() -> float | None:
+    """Compute capability (e.g. 6.1 for a GT 1030) of GPU 0, or None if it
+    can't be determined. The cu128 PyTorch build only ships kernels for
+    Turing and newer (sm_75+), so older cards need to be steered to CPU
+    instead of downloading a multi-hundred-MB wheel that'll just silently
+    fall back to CPU anyway at inference time."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        first_line = result.stdout.strip().splitlines()[0].strip()
+        return float(first_line)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+        return None
+
+
+# Lowest compute capability the cu128 PyTorch wheels ship kernels for (Turing+).
+MIN_SUPPORTED_COMPUTE_CAP = 7.5
+
+
 def torch_cuda_build() -> str | None:
     """The CUDA version torch reports (e.g. '12.8'), or None if torch isn't
     installed yet or is a CPU-only wheel."""
@@ -351,6 +374,13 @@ def ensure_gpu_torch() -> None:
     build = torch_cuda_build()
     if build:
         ok(f"GPU-accelerated PyTorch already installed (CUDA {build}).")
+        return
+
+    cap = gpu_compute_capability()
+    if cap is not None and cap < MIN_SUPPORTED_COMPUTE_CAP:
+        warn(f"NVIDIA GPU detected, but its compute capability ({cap}) is older than what "
+             f"the GPU-accelerated PyTorch build supports ({MIN_SUPPORTED_COMPUTE_CAP}+) — "
+             "staying on CPU-only PyTorch instead of downloading a build that wouldn't work anyway.")
         return
 
     warn("NVIDIA GPU detected — installing GPU-accelerated PyTorch instead of "

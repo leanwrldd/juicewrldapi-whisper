@@ -345,6 +345,9 @@ def gpu_compute_capability() -> float | None:
 
 # Lowest compute capability the cu128 PyTorch wheels ship kernels for (Turing+).
 MIN_SUPPORTED_COMPUTE_CAP = 7.5
+# Lowest compute capability the older cu118 wheels ship kernels for (Maxwell+) --
+# below this, no current PyTorch build has kernels for the card at all.
+MIN_LEGACY_COMPUTE_CAP = 5.0
 
 
 def torch_cuda_build() -> str | None:
@@ -371,24 +374,54 @@ def ensure_gpu_torch() -> None:
     if not has_nvidia_gpu():
         ok("No NVIDIA GPU detected — using CPU.")
         return
+    cap = gpu_compute_capability()
+    too_old_for_cu128 = cap is not None and cap < MIN_SUPPORTED_COMPUTE_CAP
+    too_old_for_anything = cap is not None and cap < MIN_LEGACY_COMPUTE_CAP
+
     build = torch_cuda_build()
     if build:
+        # A cu12x build already installed on a card too old for it (e.g. cu128 on a
+        # Pascal GT 1030) will silently fall back to CPU at inference time -- reinstall
+        # with the older cu118 build instead, which still ships kernels for it.
+        if build.startswith("12") and too_old_for_cu128 and not too_old_for_anything:
+            warn(f"GPU-accelerated PyTorch (CUDA {build}) is installed, but its compute "
+                 f"capability requirement is too new for this GPU ({cap}) — reinstalling "
+                 "with an older CUDA 11.8 build that supports it (one-time, larger download, "
+                 "several minutes)...")
+            t0 = time.time()
+            result = subprocess.run(
+                [str(venv_python()), "-m", "pip", "install", "--force-reinstall",
+                 "torch", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu118"],
+                cwd=ROOT,
+            )
+            if result.returncode != 0:
+                warn(f"Reinstall failed — keeping the existing CUDA {build} build "
+                     "(this GPU will run on CPU until that's resolved).")
+                return
+            ok(f"Reinstalled with the CUDA 11.8 build in {human_time(time.time() - t0)}.")
+            return
         ok(f"GPU-accelerated PyTorch already installed (CUDA {build}).")
         return
 
-    cap = gpu_compute_capability()
-    if cap is not None and cap < MIN_SUPPORTED_COMPUTE_CAP:
-        warn(f"NVIDIA GPU detected, but its compute capability ({cap}) is older than what "
-             f"the GPU-accelerated PyTorch build supports ({MIN_SUPPORTED_COMPUTE_CAP}+) — "
-             "staying on CPU-only PyTorch instead of downloading a build that wouldn't work anyway.")
-        return
+    index_url = "https://download.pytorch.org/whl/cu128"
+    if too_old_for_cu128:
+        if too_old_for_anything:
+            warn(f"NVIDIA GPU detected, but its compute capability ({cap}) is too old for any "
+                 "current PyTorch GPU build — staying on CPU-only PyTorch.")
+            return
+        warn(f"NVIDIA GPU detected with an older compute capability ({cap}) than the default "
+             f"GPU-accelerated build supports ({MIN_SUPPORTED_COMPUTE_CAP}+) — installing an "
+             "older CUDA 11.8 build instead, which still ships kernels for this GPU "
+             "(one-time, larger download, several minutes)...")
+        index_url = "https://download.pytorch.org/whl/cu118"
+    else:
+        warn("NVIDIA GPU detected — installing GPU-accelerated PyTorch instead of "
+             "the CPU-only default (one-time, larger download, several minutes)...")
 
-    warn("NVIDIA GPU detected — installing GPU-accelerated PyTorch instead of "
-         "the CPU-only default (one-time, larger download, several minutes)...")
     t0 = time.time()
     result = subprocess.run(
         [str(venv_python()), "-m", "pip", "install", "torch", "torchaudio",
-         "--index-url", "https://download.pytorch.org/whl/cu128"],
+         "--index-url", index_url],
         cwd=ROOT,
     )
     if result.returncode != 0:

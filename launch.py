@@ -204,7 +204,7 @@ def offer_git_conversion(auto_yes: bool) -> None:
         ok("Skipping — update checks will keep saying 'not a git checkout'.")
         return
 
-    tmp_dir = ROOT.parent / f"{ROOT.name}__git_clone_tmp"
+    tmp_dir = ROOT.parent / f"{ROOT.name}.gitconv"
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -223,7 +223,7 @@ def offer_git_conversion(auto_yes: bool) -> None:
         if src.exists():
             shutil.copy2(src, tmp_dir / name)
 
-    backup_dir = ROOT.parent / f"{ROOT.name}__pre-git-backup"
+    backup_dir = ROOT.parent / f"{ROOT.name}.bak"
     if backup_dir.exists():
         shutil.rmtree(backup_dir, ignore_errors=True)
 
@@ -312,6 +312,41 @@ def check_for_updates(auto_update: bool, skip: bool) -> None:
 
     step("Restarting with the updated code")
     os.execv(sys.executable, [sys.executable, str(ROOT / "launch.py"), *sys.argv[1:]])
+
+
+def _try_enable_long_paths() -> None:
+    """PyTorch's package ships absurdly deep nested files (license notices under
+    third_party/kineto/.../DCGM/testing/python3/libs_3rdparty/...), which combined
+    with a long project folder path can blow past Windows' legacy 260-character
+    MAX_PATH limit and make pip fail outright with WinError 206. NTFS long-path
+    support (available since Windows 10 1607) fixes this. Best-effort only --
+    requires admin to write HKLM, so this silently does nothing if we're not
+    elevated; _pip_failure_hint() below explains the manual fallback."""
+    if platform.system() != "Windows":
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\FileSystem",
+            0, winreg.KEY_SET_VALUE,
+        ) as key:
+            winreg.SetValueEx(key, "LongPathsEnabled", 0, winreg.REG_DWORD, 1)
+    except OSError:
+        pass
+
+
+def _pip_failure_hint() -> None:
+    if platform.system() != "Windows":
+        return
+    warn("If the error above mentions 'WinError 206' or 'filename or extension is too "
+         "long', that's Windows' classic 260-character path limit -- PyTorch ships some "
+         "very deeply nested files. Two fixes:")
+    warn("  1. Move this folder somewhere with a shorter path (e.g. C:\\WRLDSync) and run "
+         "start.bat again.")
+    warn("  2. Or enable long path support (needs to be run as Administrator once):")
+    warn('     reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem" '
+         "/v LongPathsEnabled /t REG_DWORD /d 1 /f")
 
 
 def ensure_venv() -> None:
@@ -424,6 +459,7 @@ def ensure_gpu_torch() -> None:
                 cwd=ROOT,
             )
             if result.returncode != 0:
+                _pip_failure_hint()
                 warn(f"Reinstall failed — keeping the existing CUDA {build} build "
                      "(this GPU will run on CPU until that's resolved).")
                 return
@@ -454,6 +490,7 @@ def ensure_gpu_torch() -> None:
         cwd=ROOT,
     )
     if result.returncode != 0:
+        _pip_failure_hint()
         warn("GPU PyTorch install failed — continuing with CPU-only PyTorch.")
         return
     ok(f"GPU-accelerated PyTorch installed in {human_time(time.time() - t0)}.")
@@ -536,6 +573,7 @@ def install_requirements() -> None:
         cwd=ROOT,
     )
     if result.returncode != 0:
+        _pip_failure_hint()
         fail("Dependency installation failed — see the pip output above.")
 
     marker = VENV_DIR / ".requirements_installed"
@@ -604,6 +642,7 @@ def main() -> None:
     step("Checking Python")
     ensure_python_version()
 
+    _try_enable_long_paths()
     ensure_venv()
     ensure_gpu_torch()
     ensure_ffmpeg()

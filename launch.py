@@ -44,10 +44,35 @@ class C:
     CYAN = "\033[36m"
 
 
+def _enable_windows_vt() -> bool:
+    """Older/plain cmd.exe windows don't interpret \\033[ ANSI codes unless
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING is explicitly turned on for the console
+    handle -- without this, users see literal escape-code garbage instead of
+    colored text. Returns whether it succeeded."""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        STD_OUTPUT_HANDLE = -11
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        if not kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _supports_color() -> bool:
     if os.environ.get("NO_COLOR"):
         return False
-    return sys.stdout.isatty() or os.environ.get("FORCE_COLOR") == "1"
+    if not (sys.stdout.isatty() or os.environ.get("FORCE_COLOR") == "1"):
+        return False
+    if platform.system() == "Windows" and not _enable_windows_vt():
+        return False
+    return True
 
 
 USE_COLOR = _supports_color()
@@ -171,7 +196,11 @@ def offer_git_conversion(auto_yes: bool) -> None:
 
     warn("This folder isn't a git checkout (likely downloaded as a ZIP), so it can never "
          "auto-update as-is. It can be converted into a real git checkout in place.")
-    if not confirm("Convert this folder into a git checkout now?", auto_yes):
+    # auto_yes (only true with --auto-update) skips the prompt entirely. Otherwise
+    # always ask -- but default the answer to Yes, since this is a safe, reversible
+    # operation (the old folder is backed up, never deleted) and most users just
+    # press Enter rather than typing an explicit y/n.
+    if not auto_yes and not confirm("Convert this folder into a git checkout now?", default_yes=True):
         ok("Skipping — update checks will keep saying 'not a git checkout'.")
         return
 
